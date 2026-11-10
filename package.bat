@@ -20,6 +20,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "Copy-Item (Join-Path $root 'update_ytdlp.bat') (Join-Path $stage 'HellDownloader\update_ytdlp.bat') -Force; " ^
   "Copy-Item (Join-Path $root 'README.txt') (Join-Path $stage 'HellDownloader\README.txt') -Force; " ^
   "if (Test-Path (Join-Path $root 'README.md')) { Copy-Item (Join-Path $root 'README.md') (Join-Path $stage 'HellDownloader\README.md') -Force }; " ^
+  "if (Test-Path (Join-Path $root 'README.ru.md')) { Copy-Item (Join-Path $root 'README.ru.md') (Join-Path $stage 'HellDownloader\README.ru.md') -Force }; " ^
   "Compress-Archive -Path (Join-Path $stage 'HellDownloader') -DestinationPath $zip -Force; " ^
   "Remove-Item $stage -Recurse -Force; " ^
   "Write-Host 'Created:' $zip"

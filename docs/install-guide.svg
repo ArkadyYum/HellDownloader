@@ -1,134 +1,222 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1140 620" width="100%" height="100%">
   <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#140e12"/>
-      <stop offset="100%" stop-color="#0c120f"/>
-    </linearGradient>
-    <linearGradient id="headGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#dc2626" stop-opacity="0.32"/>
-      <stop offset="100%" stop-color="#16a34a" stop-opacity="0.28"/>
-    </linearGradient>
-    <linearGradient id="btnGreen" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#16a34a"/>
-      <stop offset="100%" stop-color="#15803d"/>
-    </linearGradient>
-    <linearGradient id="btnRed" x1="0%" y1="0%" x2="100%" y2="0%">
-      <stop offset="0%" stop-color="#dc2626"/>
-      <stop offset="100%" stop-color="#b91c1c"/>
-    </linearGradient>
-    <filter id="cardShadow" x="-5%" y="-5%" width="110%" height="110%">
-      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.65"/>
+    <filter id="winShadow" x="-4%" y="-4%" width="108%" height="112%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.18"/>
+    </filter>
+    <filter id="badgeShadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="3" stdDeviation="4" flood-color="#d93025" flood-opacity="0.45"/>
     </filter>
   </defs>
 
-  <!-- Main Canvas -->
-  <rect width="960" height="620" rx="18" fill="url(#bgGrad)" stroke="#ef4444" stroke-opacity="0.35" stroke-width="2"/>
+  <!-- Neutral Soft Background -->
+  <rect width="1140" height="620" rx="14" fill="#f0f4f9"/>
+  <rect x="1" y="1" width="1138" height="618" rx="13" fill="none" stroke="#d3dce6" stroke-width="2"/>
 
-  <!-- Top Banner -->
-  <rect x="2" y="2" width="956" height="58" rx="16" fill="url(#headGrad)"/>
-  <text x="480" y="38" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="800" text-anchor="middle">
-    😈 КАК СКАЧАТЬ И УСТАНОВИТЬ HELLDOWNLOADER ЗА 1 МИНУТУ
-  </text>
+  <!-- Header Banner -->
+  <text x="570" y="38" text-anchor="middle" fill="#1f1f1f" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="700">How to Install HellDownloader (Windows 10 / 11 &amp; Chrome)</text>
+  <text x="570" y="60" text-anchor="middle" fill="#5f6368" font-family="Segoe UI, Arial, sans-serif" font-size="14">Follow the red numbered pointers below — takes less than 1 minute</text>
 
-  <!-- ==================== STEP 1 ==================== -->
-  <g transform="translate(26, 80)" filter="url(#cardShadow)">
-    <rect width="440" height="240" rx="14" fill="#18181b" stroke="#22c55e" stroke-opacity="0.45" stroke-width="1.5"/>
-    <circle cx="34" cy="34" r="18" fill="#16a34a"/>
-    <text x="34" y="40" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="800" text-anchor="middle">1</text>
-    <text x="64" y="39" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">Скачайте архив и распакуйте его</text>
+  <!-- ===================================================================== -->
+  <!-- WINDOW 1: WINDOWS 11 FILE EXPLORER (Unzip & Double-Click install.bat) -->
+  <!-- ===================================================================== -->
+  <g transform="translate(26, 80)" filter="url(#winShadow)">
+    <!-- Window Frame -->
+    <rect width="525" height="235" rx="8" fill="#ffffff" stroke="#b8c1cc" stroke-width="1"/>
+    <!-- Windows 11 Title Bar -->
+    <path d="M0 8 Q0 0 8 0 L517 0 Q525 0 525 8 L525 32 L0 32 Z" fill="#f3f3f3"/>
+    <!-- Folder Icon in Titlebar -->
+    <rect x="12" y="9" width="16" height="13" rx="2" fill="#fbbc04"/>
+    <path d="M12 11 L18 11 L20 13 L28 13 L28 22 L12 22 Z" fill="#fdd663"/>
+    <text x="35" y="20" fill="#1f1f1f" font-family="Segoe UI, sans-serif" font-size="12">HellDownloader_Setup — File Explorer</text>
+    <!-- Win11 Caption Buttons -->
+    <line x1="435" y1="16" x2="445" y2="16" stroke="#444" stroke-width="1.2"/>
+    <rect x="468" y="11" width="10" height="10" fill="none" stroke="#444" stroke-width="1.2"/>
+    <line x1="500" y1="11" x2="510" y2="21" stroke="#444" stroke-width="1.2"/>
+    <line x1="510" y1="11" x2="500" y2="21" stroke="#444" stroke-width="1.2"/>
 
-    <text x="24" y="72" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13.5">
-      Нажмите большую зелёную кнопку скачивания выше
-    </text>
-    <text x="24" y="92" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13.5">
-      и распакуйте архив <tspan fill="#86efac" font-weight="700">HellDownloader_Setup.zip</tspan> в любую папку:
-    </text>
+    <!-- Explorer Address Bar Row -->
+    <rect x="0" y="32" width="525" height="34" fill="#fafafa" stroke="#e5e5e5" stroke-width="1"/>
+    <text x="14" y="53" fill="#5f6368" font-family="Segoe UI, sans-serif" font-size="13">←   →   ↑</text>
+    <rect x="78" y="38" width="335" height="22" rx="4" fill="#ffffff" stroke="#d1d1d1"/>
+    <text x="88" y="53" fill="#333333" font-family="Segoe UI, sans-serif" font-size="11">📁 This PC &gt; Downloads &gt; HellDownloader_Setup</text>
+    <rect x="420" y="38" width="95" height="22" rx="4" fill="#ffffff" stroke="#d1d1d1"/>
+    <text x="430" y="53" fill="#888888" font-family="Segoe UI, sans-serif" font-size="11">🔍 Search</text>
 
-    <!-- Mockup of Download button & zip -->
-    <rect x="45" y="114" width="350" height="46" rx="10" fill="url(#btnGreen)" stroke="#4ade80" stroke-width="1.5"/>
-    <text x="220" y="143" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="800" text-anchor="middle">
-      ⬇ СКАЧАТЬ HellDownloader_Setup.zip
-    </text>
+    <!-- Explorer Column Headers -->
+    <text x="20" y="84" fill="#5f6368" font-family="Segoe UI, sans-serif" font-size="11">Name</text>
+    <text x="275" y="84" fill="#5f6368" font-family="Segoe UI, sans-serif" font-size="11">Type</text>
+    <line x1="12" y1="90" x2="513" y2="90" stroke="#ececec" stroke-width="1"/>
 
-    <!-- Arrow pointing to button -->
-    <path d="M 24 137 L 40 137" stroke="#f87171" stroke-width="3"/>
-    <rect x="45" y="176" width="350" height="44" rx="8" fill="#09090b" stroke="#3f3f46" stroke-width="1"/>
-    <text x="62" y="203" fill="#fbbf24" font-family="Consolas, monospace" font-size="14" font-weight="700">📁 Правый клик по архиву ➔ «Извлечь всё...»</text>
+    <!-- Row 1: extension folder -->
+    <rect x="20" y="98" width="18" height="14" rx="2" fill="#fbbc04"/>
+    <text x="46" y="110" fill="#1f1f1f" font-family="Segoe UI, sans-serif" font-size="12">extension</text>
+    <text x="275" y="110" fill="#5f6368" font-family="Segoe UI, sans-serif" font-size="11">File folder</text>
+
+    <!-- Row 2: native_host folder -->
+    <rect x="20" y="122" width="18" height="14" rx="2" fill="#fbbc04"/>
+    <text x="46" y="134" fill="#1f1f1f" font-family="Segoe UI, sans-serif" font-size="12">native_host</text>
+    <text x="275" y="134" fill="#5f6368" font-family="Segoe UI, sans-serif" font-size="11">File folder</text>
+
+    <!-- Row 3: install.bat (SELECTED / HIGHLIGHTED IN WINDOWS EXPLORER) -->
+    <rect x="10" y="144" width="490" height="28" rx="4" fill="#cce8ff" stroke="#0078d4" stroke-width="1.5"/>
+    <!-- Batch file icon -->
+    <rect x="20" y="150" width="18" height="16" rx="2" fill="#ffffff" stroke="#5f6368" stroke-width="1.2"/>
+    <rect x="20" y="150" width="18" height="4" fill="#0078d4"/>
+    <circle cx="29" cy="160" r="3" fill="none" stroke="#444" stroke-width="1.2"/>
+    <text x="46" y="163" fill="#000000" font-family="Segoe UI, sans-serif" font-size="13" font-weight="700">install.bat</text>
+    <text x="275" y="163" fill="#004578" font-family="Segoe UI, sans-serif" font-size="11" font-weight="600">Windows Batch File</text>
+
+    <!-- Row 4: uninstall.bat -->
+    <rect x="20" y="180" width="18" height="16" rx="2" fill="#ffffff" stroke="#888" stroke-width="1"/>
+    <rect x="20" y="180" width="18" height="4" fill="#666"/>
+    <text x="46" y="192" fill="#1f1f1f" font-family="Segoe UI, sans-serif" font-size="12">uninstall.bat</text>
+    <text x="275" y="192" fill="#5f6368" font-family="Segoe UI, sans-serif" font-size="11">Windows Batch File</text>
+
+    <!-- Row 5: README.txt -->
+    <rect x="20" y="204" width="16" height="16" rx="1" fill="#ffffff" stroke="#888" stroke-width="1"/>
+    <text x="46" y="216" fill="#1f1f1f" font-family="Segoe UI, sans-serif" font-size="12">README.txt</text>
+    <text x="275" y="216" fill="#5f6368" font-family="Segoe UI, sans-serif" font-size="11">Text Document</text>
+
+    <!-- Red Callout 1 -->
+    <rect x="140" y="143" width="350" height="30" rx="5" fill="none" stroke="#d93025" stroke-width="2.5" stroke-dasharray="5 3"/>
+    <!-- Red Arrow pointing to install.bat -->
+    <path d="M210 158 L135 158" stroke="#d93025" stroke-width="3"/>
+    <polygon points="135,158 145,152 145,164" fill="#d93025"/>
+    <!-- Step 1 Badge -->
+    <circle cx="225" cy="158" r="14" fill="#d93025" filter="url(#badgeShadow)"/>
+    <text x="225" y="163" text-anchor="middle" fill="#ffffff" font-family="Segoe UI, sans-serif" font-size="14" font-weight="800">1</text>
+    <rect x="245" y="145" width="240" height="26" rx="4" fill="#d93025"/>
+    <text x="365" y="162" text-anchor="middle" fill="#ffffff" font-family="Segoe UI, sans-serif" font-size="12" font-weight="700">Unzip &amp; Double-click install.bat</text>
   </g>
 
-  <!-- ==================== STEP 2 ==================== -->
-  <g transform="translate(494, 80)" filter="url(#cardShadow)">
-    <rect width="440" height="240" rx="14" fill="#18181b" stroke="#22c55e" stroke-opacity="0.45" stroke-width="1.5"/>
-    <circle cx="34" cy="34" r="18" fill="#16a34a"/>
-    <text x="34" y="40" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="800" text-anchor="middle">2</text>
-    <text x="64" y="39" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">Запустите файл install.bat</text>
+  <!-- ===================================================================== -->
+  <!-- WINDOW 2: WINDOWS COMMAND PROMPT (install.bat finished + auto-copied) -->
+  <!-- ===================================================================== -->
+  <g transform="translate(585, 80)" filter="url(#winShadow)">
+    <!-- CMD Window Frame -->
+    <rect width="529" height="235" rx="8" fill="#0c0c0c" stroke="#555555" stroke-width="1"/>
+    <!-- Windows 11 CMD Titlebar -->
+    <path d="M0 8 Q0 0 8 0 L521 0 Q529 0 529 8 L529 32 L0 32 Z" fill="#2d2d2d"/>
+    <rect x="12" y="9" width="16" height="13" rx="2" fill="#0c0c0c" stroke="#888" stroke-width="1"/>
+    <text x="15" y="19" fill="#ffffff" font-family="Consolas, monospace" font-size="9">&gt;_</text>
+    <text x="35" y="20" fill="#ffffff" font-family="Segoe UI, sans-serif" font-size="12">C:\Windows\system32\cmd.exe — install.bat</text>
+    <!-- Caption buttons -->
+    <line x1="440" y1="16" x2="450" y2="16" stroke="#ccc" stroke-width="1.2"/>
+    <rect x="472" y="11" width="10" height="10" fill="none" stroke="#ccc" stroke-width="1.2"/>
+    <line x1="504" y1="11" x2="514" y2="21" stroke="#ccc" stroke-width="1.2"/>
+    <line x1="514" y1="11" x2="504" y2="21" stroke="#ccc" stroke-width="1.2"/>
 
-    <text x="24" y="72" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13.5">
-      Откройте распакованную папку и дважды кликните
-    </text>
-    <text x="24" y="92" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13.5">
-      по файлу <tspan fill="#fca5a5" font-weight="700">install.bat</tspan> (он сам скачает и настроит всё нужное):
-    </text>
+    <!-- CMD Output -->
+    <text x="18" y="56" fill="#cccccc" font-family="Consolas, monospace" font-size="12">========================================================</text>
+    <text x="18" y="74" fill="#4ec9b0" font-family="Consolas, monospace" font-size="12" font-weight="700">  HellDownloader — Installed Successfully!</text>
+    <text x="18" y="92" fill="#cccccc" font-family="Consolas, monospace" font-size="12">========================================================</text>
+    <text x="18" y="112" fill="#dcdcaa" font-family="Consolas, monospace" font-size="12">  Runtime Folder:   C:\Users\Public\HellDownloader</text>
+    <text x="18" y="130" fill="#dcdcaa" font-family="Consolas, monospace" font-size="12">  Extension Folder: C:\Users\Public\HellDownloader\extension</text>
 
-    <!-- Mockup of Explorer + Terminal -->
-    <rect x="24" y="110" width="392" height="110" rx="8" fill="#09090b" stroke="#3f3f46" stroke-width="1.5"/>
-    <rect x="36" y="122" width="185" height="32" rx="6" fill="#27272a" stroke="#ef4444" stroke-width="1.5"/>
-    <text x="50" y="143" fill="#ffffff" font-family="Consolas, monospace" font-size="14" font-weight="700">⚙️ install.bat</text>
-    <text x="234" y="143" fill="#f87171" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">◀ Дважды кликните!</text>
+    <!-- Highlighted Auto-Copy Message -->
+    <rect x="14" y="145" width="500" height="34" rx="4" fill="#1e3a2f" stroke="#34a853" stroke-width="1.5"/>
+    <text x="24" y="166" fill="#6dd58c" font-family="Consolas, monospace" font-size="12" font-weight="700">[i] Path automatically copied to your Clipboard!</text>
 
-    <text x="38" y="176" fill="#4ade80" font-family="Consolas, monospace" font-size="12.5">=============================================</text>
-    <text x="38" y="194" fill="#86efac" font-family="Consolas, monospace" font-size="13" font-weight="700">  HellDownloader — Installed Successfully!</text>
-    <text x="38" y="210" fill="#4ade80" font-family="Consolas, monospace" font-size="12.5">=============================================</text>
+    <text x="18" y="202" fill="#888888" font-family="Consolas, monospace" font-size="12">Press any key to continue . . .</text>
+
+    <!-- Step 2 Badge -->
+    <circle cx="40" cy="212" r="14" fill="#1a73e8"/>
+    <text x="40" y="217" text-anchor="middle" fill="#ffffff" font-family="Segoe UI, sans-serif" font-size="14" font-weight="800">✓</text>
+    <text x="64" y="217" fill="#9aa0a6" font-family="Segoe UI, sans-serif" font-size="12">Wait 5 seconds until this window says "Installed Successfully!"</text>
   </g>
 
-  <!-- ==================== STEP 3 ==================== -->
-  <g transform="translate(26, 342)" filter="url(#cardShadow)">
-    <rect width="908" height="252" rx="14" fill="#18181b" stroke="#ef4444" stroke-opacity="0.5" stroke-width="1.5"/>
-    <circle cx="34" cy="34" r="18" fill="#dc2626"/>
-    <text x="34" y="40" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="800" text-anchor="middle">3</text>
-    <text x="64" y="39" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">
-      Добавьте расширение в браузер (Chrome / Яндекс Браузер / Edge / Opera / Brave)
-    </text>
+  <!-- ===================================================================== -->
+  <!-- WINDOW 3: GOOGLE CHROME (chrome://extensions/) + FOLDER PICKER        -->
+  <!-- ===================================================================== -->
+  <g transform="translate(26, 336)" filter="url(#winShadow)">
+    <!-- Chrome Browser Outer Window -->
+    <rect width="1088" height="260" rx="8" fill="#ffffff" stroke="#b8c1cc" stroke-width="1"/>
+    
+    <!-- Chrome Tab Strip (Standard Light Theme) -->
+    <path d="M0 8 Q0 0 8 0 L1080 0 Q1088 0 1088 8 L1088 36 L0 36 Z" fill="#dee1e6"/>
+    <!-- Active Tab -->
+    <path d="M16 36 L22 10 Q24 6 28 6 L210 6 Q214 6 216 10 L222 36 Z" fill="#ffffff"/>
+    <!-- Puzzle Icon in Tab -->
+    <circle cx="36" cy="21" r="6" fill="#1a73e8"/>
+    <text x="48" y="25" fill="#202124" font-family="Segoe UI, Arial, sans-serif" font-size="12">Extensions</text>
+    <text x="200" y="25" fill="#5f6368" font-family="Segoe UI, sans-serif" font-size="11">×</text>
 
-    <!-- Mockup of chrome://extensions UI -->
-    <rect x="24" y="60" width="860" height="172" rx="10" fill="#202124" stroke="#5f6368" stroke-width="1.5"/>
+    <!-- Chrome Navigation / Omnibox Bar -->
+    <rect x="0" y="36" width="1088" height="40" fill="#ffffff" stroke="#dadce0" stroke-width="1"/>
+    <text x="16" y="61" fill="#5f6368" font-family="Segoe UI, sans-serif" font-size="15">←   →   ↻</text>
+    <!-- Omnibox Address Bar -->
+    <rect x="96" y="42" width="520" height="28" rx="14" fill="#f1f3f4" stroke="#d93025" stroke-width="2"/>
+    <text x="114" y="61" fill="#202124" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">chrome://extensions/</text>
 
-    <!-- Browser URL Bar -->
-    <rect x="38" y="72" width="420" height="30" rx="15" fill="#17171a" stroke="#3c4043" stroke-width="1"/>
-    <text x="56" y="92" fill="#8ab4f8" font-family="Consolas, monospace" font-size="14" font-weight="700">chrome://extensions/</text>
-    <text x="235" y="92" fill="#9aa0a6" font-family="Segoe UI, Arial, sans-serif" font-size="12">(вставьте в адресную строку)</text>
+    <!-- Callout 2: Type chrome://extensions/ -->
+    <circle cx="360" cy="56" r="12" fill="#d93025" filter="url(#badgeShadow)"/>
+    <text x="360" y="61" text-anchor="middle" fill="#ffffff" font-family="Segoe UI, sans-serif" font-size="12" font-weight="800">2</text>
+    <text x="380" y="60" fill="#d93025" font-family="Segoe UI, sans-serif" font-size="12" font-weight="700">← Type this in Chrome address bar &amp; press Enter</text>
 
-    <!-- Developer Mode Toggle (Top Right) -->
-    <rect x="640" y="70" width="230" height="36" rx="8" fill="#292a2d" stroke="#ef4444" stroke-width="2"/>
-    <text x="654" y="93" fill="#e8eaed" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">Режим разработчика</text>
-    <!-- Switch ON -->
-    <rect x="822" y="79" width="34" height="18" rx="9" fill="#8ab4f8"/>
-    <circle cx="847" cy="88" r="7" fill="#202124"/>
+    <!-- Chrome Extensions Blue/White Subheader Bar -->
+    <rect x="0" y="76" width="1088" height="48" fill="#ffffff" stroke="#e8eaed" stroke-width="1"/>
+    <!-- Puzzle piece + "Extensions" title -->
+    <rect x="22" y="90" width="20" height="20" rx="4" fill="#1a73e8"/>
+    <text x="52" y="106" fill="#202124" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="600">Extensions</text>
 
-    <!-- Label 3A -->
-    <rect x="520" y="73" width="110" height="28" rx="6" fill="#dc2626"/>
-    <text x="575" y="92" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" font-weight="700" text-anchor="middle">ШАГ А: Вкл ➔</text>
+    <!-- Developer Mode Toggle (Right side of Chrome header) -->
+    <rect x="820" y="83" width="246" height="34" rx="6" fill="#fff8f7" stroke="#d93025" stroke-width="2" stroke-dasharray="5 3"/>
+    <text x="834" y="105" fill="#202124" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">Developer mode</text>
+    <!-- Material Blue Toggle Switch (ON) -->
+    <rect x="945" y="92" width="34" height="16" rx="8" fill="#8ab4f8"/>
+    <circle cx="971" cy="100" r="10" fill="#1a73e8"/>
+    <!-- Step 3 Badge on Developer Mode -->
+    <circle cx="1005" cy="100" r="13" fill="#d93025" filter="url(#badgeShadow)"/>
+    <text x="1005" y="105" text-anchor="middle" fill="#ffffff" font-family="Segoe UI, sans-serif" font-size="13" font-weight="800">3</text>
+    <text x="1038" y="104" text-anchor="middle" fill="#d93025" font-family="Segoe UI, sans-serif" font-size="11" font-weight="800">ON</text>
 
-    <!-- Load Unpacked Button (Top Left) -->
-    <rect x="38" y="118" width="280" height="40" rx="8" fill="#8ab4f8" stroke="#ffffff" stroke-width="1.5"/>
-    <text x="178" y="143" fill="#202124" font-family="Segoe UI, Arial, sans-serif" font-size="13.5" font-weight="800" text-anchor="middle">
-      Загрузить распакованное расширение
-    </text>
+    <!-- Chrome Extensions Toolbar ("Load unpacked" | "Pack extension" | "Update") -->
+    <rect x="0" y="124" width="1088" height="48" fill="#ffffff" stroke="#e8eaed" stroke-width="1"/>
+    
+    <!-- "Load unpacked" standard Chrome Material button -->
+    <rect x="20" y="132" width="130" height="32" rx="4" fill="#ffffff" stroke="#dadce0" stroke-width="1.5"/>
+    <rect x="16" y="128" width="138" height="40" rx="6" fill="none" stroke="#d93025" stroke-width="2.5"/>
+    <text x="85" y="153" text-anchor="middle" fill="#1a73e8" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">Load unpacked</text>
 
-    <!-- Label 3B -->
-    <rect x="332" y="124" width="135" height="28" rx="6" fill="#16a34a"/>
-    <text x="399" y="143" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" font-weight="700" text-anchor="middle">◀ ШАГ Б: Нажмите</text>
+    <!-- Other 2 standard Chrome buttons (grayed/normal) -->
+    <rect x="164" y="132" width="115" height="32" rx="4" fill="#ffffff" stroke="#dadce0" stroke-width="1"/>
+    <text x="221" y="153" text-anchor="middle" fill="#1a73e8" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">Pack extension</text>
+    <rect x="290" y="132" width="76" height="32" rx="4" fill="#ffffff" stroke="#dadce0" stroke-width="1"/>
+    <text x="328" y="153" text-anchor="middle" fill="#1a73e8" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">Update</text>
 
-    <!-- Folder Selection Box -->
-    <rect x="38" y="172" width="832" height="46" rx="8" fill="#141417" stroke="#22c55e" stroke-opacity="0.7" stroke-width="1.5"/>
-    <text x="56" y="200" fill="#e5e7eb" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="600">
-      ШАГ В: В открывшемся окне выберите папку:
-    </text>
-    <text x="375" y="200" fill="#4ade80" font-family="Consolas, monospace" font-size="15" font-weight="800">
-      C:\Users\Public\HellDownloader\extension
-    </text>
-    <text x="720" y="200" fill="#fde047" font-family="Segoe UI, Arial, sans-serif" font-size="13.5" font-weight="700">
-      (Готово! Клавиша: Shift+F8)
-    </text>
+    <!-- Step 4 Arrow pointing to Load Unpacked -->
+    <path d="M85 198 L85 172" stroke="#d93025" stroke-width="3"/>
+    <polygon points="85,170 79,180 91,180" fill="#d93025"/>
+    <circle cx="42" cy="214" r="14" fill="#d93025" filter="url(#badgeShadow)"/>
+    <text x="42" y="219" text-anchor="middle" fill="#ffffff" font-family="Segoe UI, sans-serif" font-size="14" font-weight="800">4</text>
+    <text x="64" y="212" fill="#d93025" font-family="Segoe UI, sans-serif" font-size="13" font-weight="700">Click "Load unpacked"</text>
+    <text x="64" y="230" fill="#5f6368" font-family="Segoe UI, sans-serif" font-size="12">Then paste path with Ctrl+V in the folder window →</text>
+
+    <!-- =================================================================== -->
+    <!-- OVERLAY: WINDOWS "SELECT FOLDER" DIALOG                             -->
+    <!-- =================================================================== -->
+    <g transform="translate(430, 128)" filter="url(#winShadow)">
+      <rect width="636" height="120" rx="6" fill="#f9f9f9" stroke="#888888" stroke-width="1.5"/>
+      <!-- Dialog Titlebar -->
+      <rect width="636" height="26" rx="6" fill="#ffffff"/>
+      <text x="12" y="18" fill="#1f1f1f" font-family="Segoe UI, sans-serif" font-size="12" font-weight="600">📁 Select the extension directory — Windows Dialog</text>
+      
+      <!-- Folder Input Box inside Windows Dialog -->
+      <text x="16" y="54" fill="#1f1f1f" font-family="Segoe UI, sans-serif" font-size="12">Folder:</text>
+      <rect x="64" y="36" width="554" height="26" rx="3" fill="#ffffff" stroke="#0078d4" stroke-width="2"/>
+      <text x="74" y="54" fill="#000000" font-family="Consolas, Segoe UI, monospace" font-size="13" font-weight="700">C:\Users\Public\HellDownloader\extension</text>
+
+      <!-- Step 5 Callout + Select Folder Button -->
+      <circle cx="30" cy="92" r="13" fill="#d93025" filter="url(#badgeShadow)"/>
+      <text x="30" y="97" text-anchor="middle" fill="#ffffff" font-family="Segoe UI, sans-serif" font-size="13" font-weight="800">5</text>
+      <text x="50" y="96" fill="#202124" font-family="Segoe UI, sans-serif" font-size="12" font-weight="700">Press Ctrl+V (path is already copied!) &amp; click "Select Folder" →</text>
+
+      <!-- Windows "Select Folder" & "Cancel" Buttons -->
+      <rect x="424" y="76" width="104" height="28" rx="4" fill="#0078d4" stroke="#d93025" stroke-width="2"/>
+      <text x="476" y="95" text-anchor="middle" fill="#ffffff" font-family="Segoe UI, sans-serif" font-size="12" font-weight="700">Select Folder</text>
+
+      <rect x="536" y="76" width="82" height="28" rx="4" fill="#ffffff" stroke="#cccccc" stroke-width="1"/>
+      <text x="577" y="95" text-anchor="middle" fill="#333333" font-family="Segoe UI, sans-serif" font-size="12">Cancel</text>
+    </g>
   </g>
 </svg>
