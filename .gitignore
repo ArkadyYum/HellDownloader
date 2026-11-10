@@ -1,0 +1,12 @@
+# Ignore temporary files, logs, and local test artifacts
+test_downloads/
+*.log
+*.zip
+feedback_history.jsonl
+native_host/debug.log
+native_host/config.json
+native_host/com.vibecoding.videoclipper.json
+native_host/host_launcher.bat
+native_host/bin/*.exe
+.DS_Store
+Thumbs.db

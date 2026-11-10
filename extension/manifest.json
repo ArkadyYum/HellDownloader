@@ -1,0 +1,62 @@
+{
+  "manifest_version": 3,
+  "name": "HellDownloader",
+  "version": "1.1.0",
+  "description": "HellDownloader — universal HTML5 video & frame-accurate fragment clipper up to 4K.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt1Eu7g8HVMVapLkgfqloiNAUZkXauAjONJhvY8tzLkbkFNeR4fU/qJZ59u3dkuOz8TH+D77rWz8whrn6FssZVOtnv83D8STdiznCNCWEEFSVuJpKtkqHAUDnwvxjjL916DC5bXRzFUE+lPYga8WDzf3cUFb7qOwH+IVhVuYQQDmggTRsvDLhD/ZPK0zqCK3/Zq9i6XHUqjDbOG4WwgWFsgEmEnCpJjuO/ikkGD3uPeo+gC1BiAcss8MPMjKMghkzs0eXOkWtOLNbGyeyKwbQeh9qOG/Pe6NLviN12hVliv37HTjX8LiaCL8l7Eo5JaTDsI3XXzJ6/AUuFCdpi2bcLQIDAQAB",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_title": "HellDownloader (Shift+F8)",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "permissions": [
+    "nativeMessaging",
+    "downloads",
+    "webRequest",
+    "cookies",
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "unclose_shadow.js"
+      ],
+      "run_at": "document_start",
+      "world": "MAIN",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "css": [
+        "content.css"
+      ],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}

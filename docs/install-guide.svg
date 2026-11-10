@@ -1,0 +1,134 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#140e12"/>
+      <stop offset="100%" stop-color="#0c120f"/>
+    </linearGradient>
+    <linearGradient id="headGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#dc2626" stop-opacity="0.32"/>
+      <stop offset="100%" stop-color="#16a34a" stop-opacity="0.28"/>
+    </linearGradient>
+    <linearGradient id="btnGreen" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#16a34a"/>
+      <stop offset="100%" stop-color="#15803d"/>
+    </linearGradient>
+    <linearGradient id="btnRed" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#dc2626"/>
+      <stop offset="100%" stop-color="#b91c1c"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-5%" y="-5%" width="110%" height="110%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#000000" flood-opacity="0.65"/>
+    </filter>
+  </defs>
+
+  <!-- Main Canvas -->
+  <rect width="960" height="620" rx="18" fill="url(#bgGrad)" stroke="#ef4444" stroke-opacity="0.35" stroke-width="2"/>
+
+  <!-- Top Banner -->
+  <rect x="2" y="2" width="956" height="58" rx="16" fill="url(#headGrad)"/>
+  <text x="480" y="38" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="22" font-weight="800" text-anchor="middle">
+    😈 КАК СКАЧАТЬ И УСТАНОВИТЬ HELLDOWNLOADER ЗА 1 МИНУТУ
+  </text>
+
+  <!-- ==================== STEP 1 ==================== -->
+  <g transform="translate(26, 80)" filter="url(#cardShadow)">
+    <rect width="440" height="240" rx="14" fill="#18181b" stroke="#22c55e" stroke-opacity="0.45" stroke-width="1.5"/>
+    <circle cx="34" cy="34" r="18" fill="#16a34a"/>
+    <text x="34" y="40" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="800" text-anchor="middle">1</text>
+    <text x="64" y="39" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">Скачайте архив и распакуйте его</text>
+
+    <text x="24" y="72" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13.5">
+      Нажмите большую зелёную кнопку скачивания выше
+    </text>
+    <text x="24" y="92" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13.5">
+      и распакуйте архив <tspan fill="#86efac" font-weight="700">HellDownloader_Setup.zip</tspan> в любую папку:
+    </text>
+
+    <!-- Mockup of Download button & zip -->
+    <rect x="45" y="114" width="350" height="46" rx="10" fill="url(#btnGreen)" stroke="#4ade80" stroke-width="1.5"/>
+    <text x="220" y="143" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="16" font-weight="800" text-anchor="middle">
+      ⬇ СКАЧАТЬ HellDownloader_Setup.zip
+    </text>
+
+    <!-- Arrow pointing to button -->
+    <path d="M 24 137 L 40 137" stroke="#f87171" stroke-width="3"/>
+    <rect x="45" y="176" width="350" height="44" rx="8" fill="#09090b" stroke="#3f3f46" stroke-width="1"/>
+    <text x="62" y="203" fill="#fbbf24" font-family="Consolas, monospace" font-size="14" font-weight="700">📁 Правый клик по архиву ➔ «Извлечь всё...»</text>
+  </g>
+
+  <!-- ==================== STEP 2 ==================== -->
+  <g transform="translate(494, 80)" filter="url(#cardShadow)">
+    <rect width="440" height="240" rx="14" fill="#18181b" stroke="#22c55e" stroke-opacity="0.45" stroke-width="1.5"/>
+    <circle cx="34" cy="34" r="18" fill="#16a34a"/>
+    <text x="34" y="40" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="800" text-anchor="middle">2</text>
+    <text x="64" y="39" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">Запустите файл install.bat</text>
+
+    <text x="24" y="72" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13.5">
+      Откройте распакованную папку и дважды кликните
+    </text>
+    <text x="24" y="92" fill="#d1d5db" font-family="Segoe UI, Arial, sans-serif" font-size="13.5">
+      по файлу <tspan fill="#fca5a5" font-weight="700">install.bat</tspan> (он сам скачает и настроит всё нужное):
+    </text>
+
+    <!-- Mockup of Explorer + Terminal -->
+    <rect x="24" y="110" width="392" height="110" rx="8" fill="#09090b" stroke="#3f3f46" stroke-width="1.5"/>
+    <rect x="36" y="122" width="185" height="32" rx="6" fill="#27272a" stroke="#ef4444" stroke-width="1.5"/>
+    <text x="50" y="143" fill="#ffffff" font-family="Consolas, monospace" font-size="14" font-weight="700">⚙️ install.bat</text>
+    <text x="234" y="143" fill="#f87171" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">◀ Дважды кликните!</text>
+
+    <text x="38" y="176" fill="#4ade80" font-family="Consolas, monospace" font-size="12.5">=============================================</text>
+    <text x="38" y="194" fill="#86efac" font-family="Consolas, monospace" font-size="13" font-weight="700">  HellDownloader — Installed Successfully!</text>
+    <text x="38" y="210" fill="#4ade80" font-family="Consolas, monospace" font-size="12.5">=============================================</text>
+  </g>
+
+  <!-- ==================== STEP 3 ==================== -->
+  <g transform="translate(26, 342)" filter="url(#cardShadow)">
+    <rect width="908" height="252" rx="14" fill="#18181b" stroke="#ef4444" stroke-opacity="0.5" stroke-width="1.5"/>
+    <circle cx="34" cy="34" r="18" fill="#dc2626"/>
+    <text x="34" y="40" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="18" font-weight="800" text-anchor="middle">3</text>
+    <text x="64" y="39" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">
+      Добавьте расширение в браузер (Chrome / Яндекс Браузер / Edge / Opera / Brave)
+    </text>
+
+    <!-- Mockup of chrome://extensions UI -->
+    <rect x="24" y="60" width="860" height="172" rx="10" fill="#202124" stroke="#5f6368" stroke-width="1.5"/>
+
+    <!-- Browser URL Bar -->
+    <rect x="38" y="72" width="420" height="30" rx="15" fill="#17171a" stroke="#3c4043" stroke-width="1"/>
+    <text x="56" y="92" fill="#8ab4f8" font-family="Consolas, monospace" font-size="14" font-weight="700">chrome://extensions/</text>
+    <text x="235" y="92" fill="#9aa0a6" font-family="Segoe UI, Arial, sans-serif" font-size="12">(вставьте в адресную строку)</text>
+
+    <!-- Developer Mode Toggle (Top Right) -->
+    <rect x="640" y="70" width="230" height="36" rx="8" fill="#292a2d" stroke="#ef4444" stroke-width="2"/>
+    <text x="654" y="93" fill="#e8eaed" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="700">Режим разработчика</text>
+    <!-- Switch ON -->
+    <rect x="822" y="79" width="34" height="18" rx="9" fill="#8ab4f8"/>
+    <circle cx="847" cy="88" r="7" fill="#202124"/>
+
+    <!-- Label 3A -->
+    <rect x="520" y="73" width="110" height="28" rx="6" fill="#dc2626"/>
+    <text x="575" y="92" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" font-weight="700" text-anchor="middle">ШАГ А: Вкл ➔</text>
+
+    <!-- Load Unpacked Button (Top Left) -->
+    <rect x="38" y="118" width="280" height="40" rx="8" fill="#8ab4f8" stroke="#ffffff" stroke-width="1.5"/>
+    <text x="178" y="143" fill="#202124" font-family="Segoe UI, Arial, sans-serif" font-size="13.5" font-weight="800" text-anchor="middle">
+      Загрузить распакованное расширение
+    </text>
+
+    <!-- Label 3B -->
+    <rect x="332" y="124" width="135" height="28" rx="6" fill="#16a34a"/>
+    <text x="399" y="143" fill="#ffffff" font-family="Segoe UI, Arial, sans-serif" font-size="12.5" font-weight="700" text-anchor="middle">◀ ШАГ Б: Нажмите</text>
+
+    <!-- Folder Selection Box -->
+    <rect x="38" y="172" width="832" height="46" rx="8" fill="#141417" stroke="#22c55e" stroke-opacity="0.7" stroke-width="1.5"/>
+    <text x="56" y="200" fill="#e5e7eb" font-family="Segoe UI, Arial, sans-serif" font-size="14" font-weight="600">
+      ШАГ В: В открывшемся окне выберите папку:
+    </text>
+    <text x="375" y="200" fill="#4ade80" font-family="Consolas, monospace" font-size="15" font-weight="800">
+      C:\Users\Public\HellDownloader\extension
+    </text>
+    <text x="720" y="200" fill="#fde047" font-family="Segoe UI, Arial, sans-serif" font-size="13.5" font-weight="700">
+      (Готово! Клавиша: Shift+F8)
+    </text>
+  </g>
+</svg>
