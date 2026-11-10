@@ -1,16 +1,45 @@
-# 😈 HellDownloader (Русская версия)
+<div align="center">
+  <img src="docs/hero-banner-ru.png" alt="HellDownloader — Скачивание 4K видео и покадровая нарезка фрагментов" width="100%" />
 
-> 🌐 **Язык / Language:** **[🇬🇧 English (Click here)](README.md)** | **🇷🇺 Русский**
+  # 😈 HellDownloader
 
-**HellDownloader** — универсальное расширение для браузера и локальный медиа-движок для Windows 10/11, позволяющие сохранять как **полные видеоролики (до 4K 60fps и MP3)**, так и **вырезать точные фрагменты с покадровой точностью** прямо поверх стандартного видеоплеера на любых сайтах и видеоплатформах.
+  **Универсальное расширение и локальный медиа-движок для скачивания видео до 4K 60fps и покадровой нарезки фрагментов прямо в браузере (Windows 10/11).**
+
+  <p>
+    <img src="https://img.shields.io/badge/Ползунки_прямо_на_плеере-30363d?style=flat" alt="Ползунки на плеере" height="22" />
+    <img src="https://img.shields.io/badge/Точность_до_1_кадра-30363d?style=flat" alt="Точность до 1 кадра" height="22" />
+    <img src="https://img.shields.io/badge/До_4K_60fps-30363d?style=flat" alt="До 4K 60fps" height="22" />
+    <img src="https://img.shields.io/badge/MP3_Аудио-30363d?style=flat" alt="MP3 Аудио" height="22" />
+    <img src="https://img.shields.io/badge/Выбор_главы_в_1_клик-30363d?style=flat" alt="Выбор главы в 1 клик" height="22" />
+    <img src="https://img.shields.io/badge/Прямые_эфиры_(Live)-30363d?style=flat" alt="Прямые эфиры" height="22" />
+    <img src="https://img.shields.io/badge/Встроенный_DoH_мост-30363d?style=flat" alt="Встроенный DoH мост" height="22" />
+    <img src="https://img.shields.io/badge/Без_рекламы-30363d?style=flat" alt="Без рекламы" height="22" />
+  </p>
+
+  <p>
+    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest"><img src="https://img.shields.io/github/v/release/ArkadyYum/HellDownloader?label=Release&color=dc2626" alt="Release" /></a>
+    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip"><img src="https://img.shields.io/github/downloads/ArkadyYum/HellDownloader/total?label=Downloads&color=16a34a" alt="Downloads" /></a>
+    <img src="https://img.shields.io/badge/Платформа-Windows_10_%2F_11-0078d4" alt="Windows 10/11" />
+    <img src="https://img.shields.io/badge/Браузеры-Chrome_%7C_Яндекс_%7C_Edge_%7C_Brave_%7C_Opera-f59e0b" alt="Chromium Browsers" />
+  </p>
+
+  <p>
+    🌐 <b>Язык / Language:</b> &nbsp; <a href="README.md"><b>🇬🇧 English (Click here)</b></a> &nbsp;·&nbsp; <b>🇷🇺 Русский</b>
+  </p>
+
+  <p>
+    <i>Никакого копирования ссылок в отдельные программы, никакого повторного входа в аккаунты, никакой рекламы. Если HellDownloader экономит вам время — поставьте ⭐ звезду в правом верхнем углу!</i>
+  </p>
+</div>
 
 ---
 
 ## ✨ Основные возможности
 
-* **🎬 Полное видео или ✂️ Вырезка фрагмента:** ползунки начала (`S`) и конца (`E`) встраиваются прямо поверх родной полосы прокрутки видеоплеера.
+* **🎬 Полное видео или ✂️ Вырезка фрагмента:** ползунки начала (`S`) и конца (`E`) встраиваются прямо поверх родной полосы прокрутки видеоплеера во время просмотра.
 * **Точность до 1 кадра (`1f` / `1s`):** кнопки пошаговой подгонки границ фрагмента, фиксация длительности (`🔒`) и предпросмотр выбранного отрезка в цикле (`▶ Preview Clip`).
 * **Автовыбор глав и таймкодов:** клик по любому размеченному эпизоду на таймлайне плеера автоматически выставляет ползунки `S` и `E` по границам этого эпизода и подставляет его название.
+* **Работа прямо в вашем родном браузере:** не нужно копировать ссылки в отдельную десктопную программу или заново логиниться во встроенный браузер.
 * **Работа с прямыми эфирами (Live):** запись отрывка прямо из идущего стрима.
 * **Встроенный DoH-мост:** стабильная работа даже при сбоях или ограничениях системного DNS провайдера.
 * **Поддержка всех Chromium-браузеров:** Google Chrome, Яндекс Браузер, Microsoft Edge, Brave, Opera / Opera GX, Vivaldi.
@@ -22,7 +51,11 @@
 
 > **Не нужно ничего искать в файлах выше!** Просто нажмите на большую ссылку ниже — скачивание архива установщика начнётся автоматически:
 
+<div align="center">
+
 ### 👉 [**СКАЧАТЬ HellDownloader_Setup.zip (Установщик для Windows 10/11)**](https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip) 👈
+
+</div>
 
 ![Пошаговая инструкция по установке HellDownloader в Windows и Chrome](docs/install-guide-ru.svg)
 

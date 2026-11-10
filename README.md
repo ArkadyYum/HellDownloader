@@ -1,16 +1,45 @@
-# 😈 HellDownloader
+<div align="center">
+  <img src="docs/hero-banner.png" alt="HellDownloader — Universal 4K Video & Frame-Accurate Fragment Clipper" width="100%" />
 
-> 🌐 **Language / Язык:** **🇬🇧 English** | **[🇷🇺 Русский (Нажмите здесь)](README.ru.md)**
+  # 😈 HellDownloader
 
-**HellDownloader** is a universal Chromium browser extension and local native media engine for Windows 10/11 that lets you download **full videos (up to 4K 60fps & MP3)** or **cut frame-accurate video fragments** directly on top of the native HTML5 video player across video platforms and websites.
+  **Universal HTML5 video & frame-accurate fragment downloader for Chromium browsers on Windows 10/11.**
+
+  <p>
+    <img src="https://img.shields.io/badge/In--Player_Timeline_Clipper-30363d?style=flat" alt="In-Player Timeline Clipper" height="22" />
+    <img src="https://img.shields.io/badge/1--Frame_Precision-30363d?style=flat" alt="1-Frame Precision" height="22" />
+    <img src="https://img.shields.io/badge/Up_to_4K_60fps-30363d?style=flat" alt="Up to 4K 60fps" height="22" />
+    <img src="https://img.shields.io/badge/MP3_Audio-30363d?style=flat" alt="MP3 Audio" height="22" />
+    <img src="https://img.shields.io/badge/1--Click_Chapters-30363d?style=flat" alt="1-Click Chapters" height="22" />
+    <img src="https://img.shields.io/badge/Live_Streams-30363d?style=flat" alt="Live Streams" height="22" />
+    <img src="https://img.shields.io/badge/Built--in_DoH_Bridge-30363d?style=flat" alt="Built-in DoH Bridge" height="22" />
+    <img src="https://img.shields.io/badge/No_Ads-30363d?style=flat" alt="No Ads" height="22" />
+  </p>
+
+  <p>
+    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest"><img src="https://img.shields.io/github/v/release/ArkadyYum/HellDownloader?label=Release&color=dc2626" alt="Release" /></a>
+    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip"><img src="https://img.shields.io/github/downloads/ArkadyYum/HellDownloader/total?label=Downloads&color=16a34a" alt="Downloads" /></a>
+    <img src="https://img.shields.io/badge/Platform-Windows_10_%2F_11-0078d4" alt="Windows 10/11" />
+    <img src="https://img.shields.io/badge/Browser-Chrome_%7C_Edge_%7C_Brave_%7C_Opera_%7C_Yandex-f59e0b" alt="Chromium Browsers" />
+  </p>
+
+  <p>
+    🌐 <b>Language / Язык:</b> &nbsp; <b>🇬🇧 English</b> &nbsp;·&nbsp; <a href="README.ru.md"><b>🇷🇺 Русский (Нажмите здесь)</b></a>
+  </p>
+
+  <p>
+    <i>No separate browser to sign into, no copy-pasting links, no ads. If HellDownloader saves you time, a ⭐ in the top-right corner helps others find it!</i>
+  </p>
+</div>
 
 ---
 
 ## ✨ Key Features
 
-* **🎬 Full Video or ✂️ Frame-Accurate Fragment Cut:** Start (`S`) and End (`E`) handles mount directly onto the video player's native timeline scrub bar.
+* **🎬 Full Video or ✂️ Frame-Accurate Fragment Cut:** Start (`S`) and End (`E`) handles mount directly onto the video player's native timeline scrub bar while you watch.
 * **Frame-by-Frame Precision (`1f` / `1s`):** Fine-tune clip boundaries, lock clip duration (`🔒`), and loop-preview your exact cut (`▶ Preview Clip`) before downloading.
 * **1-Click Chapter Selection:** Clicking any chapter segment on the video timeline automatically snaps the `S` and `E` markers to that chapter's start and end times and pre-fills the chapter title.
+* **Works Directly in Your Own Browser:** No need to copy-paste URLs into a separate desktop app or sign into a secondary embedded browser — uses your active browser session seamlessly.
 * **Live Stream Recording:** Record clips directly from active live streams.
 * **Built-in DoH Bridge:** Works reliably even when your ISP's DNS is unstable or restricted.
 * **Works Across All Chromium Browsers:** Google Chrome, Microsoft Edge, Brave, Opera / Opera GX, Vivaldi, Yandex Browser.
@@ -22,7 +51,11 @@
 
 > **No need to browse the source files above!** Click the big link below to immediately download the ready-to-use Windows installer package:
 
+<div align="center">
+
 ### 👉 [**DOWNLOAD HellDownloader_Setup.zip (Windows 10/11 Installer)**](https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip) 👈
+
+</div>
 
 ![How to install HellDownloader on Windows and Chrome](docs/install-guide.svg)
 
