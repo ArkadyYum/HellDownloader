@@ -24,16 +24,13 @@
    * *Note:* If Windows SmartScreen shows a blue prompt (*"Windows protected your PC"*), click **More info** → **Run anyway**.
    * Wait a few seconds until the black command window says `Installed Successfully!`. It will automatically set up `C:\Users\Public\HellDownloader` and **automatically copy the extension folder path to your clipboard**!
 2. **Open Chrome Extensions:**
-   * Open your browser (Chrome, Edge, Brave, Opera, or Yandex Browser) and type in the address bar:
-     ```text
-     chrome://extensions/
-     ```
+   * In your browser (Chrome, Edge, Brave, Opera, or Yandex Browser), click the **Three Dots `⋮`** in the top-right corner → **Extensions (`🧩`)** → **Manage Extensions** (or simply type `chrome://extensions/` in the address bar).
 3. **Enable Developer Mode:**
-   * Turn **ON** the **Developer mode** switch in the top-right corner of the page.
+   * Turn **ON** the **Developer mode** switch in the top-right corner of the Extensions page.
 4. **Click "Load unpacked":**
    * Click the **Load unpacked** button in the top-left corner.
-5. **Paste the Path (`Ctrl+V`) & Select Folder:**
-   * In the Windows folder dialog that opens, simply press **`Ctrl+V`** in the folder box (or select `C:\Users\Public\HellDownloader\extension`) and click **Select Folder**.
+5. **Select the `extension` Folder:**
+   * In the Windows folder dialog that opens, go to the folder where you downloaded and unpacked **HellDownloader**, select the **`extension`** folder inside it (or simply press **`Ctrl+V`** in the folder box — `install.bat` already copied the path for you!), and click **Select Folder**.
 6. **Done!** Open any video in your browser and press **`Shift+F8`** on your keyboard (you can customize the shortcut anytime in the panel header).
 
 ### 🗑️ How to Uninstall:
