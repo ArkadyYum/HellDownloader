@@ -6,39 +6,6 @@
 
 ---
 
-## 📥 1-CLICK DOWNLOAD (For Users)
-
-> **No need to browse the source files above!** Click the big link below to immediately download the ready-to-use Windows installer package:
-
-### 👉 [**DOWNLOAD HellDownloader_Setup.zip (Windows 10/11 Installer)**](https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip) 👈
-
----
-
-## 🖼️ Visual Step-by-Step Installation Guide (Takes 1 Minute)
-
-![How to install HellDownloader on Windows and Chrome](docs/install-guide.svg)
-
-### Foolproof Step-by-Step Instructions:
-1. **Unzip & Run `install.bat`:**
-   * Click [**DOWNLOAD HellDownloader_Setup.zip**](https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip) above, extract the ZIP folder anywhere on your PC, and double-click **`install.bat`**.
-   * *Note:* If Windows SmartScreen shows a blue prompt (*"Windows protected your PC"*), click **More info** → **Run anyway**.
-   * Wait a few seconds until the black command window says `Installed Successfully!`. It will automatically set up `C:\Users\Public\HellDownloader` and **automatically copy the extension folder path to your clipboard**!
-2. **Open Chrome Extensions:**
-   * In your browser (Chrome, Edge, Brave, Opera, or Yandex Browser), click the **Three Dots `⋮`** in the top-right corner → **Extensions (`🧩`)** → **Manage Extensions** (or simply type `chrome://extensions/` in the address bar).
-3. **Enable Developer Mode:**
-   * Turn **ON** the **Developer mode** switch in the top-right corner of the Extensions page.
-4. **Click "Load unpacked":**
-   * Click the **Load unpacked** button in the top-left corner.
-5. **Select the `extension` Folder:**
-   * In the Windows folder dialog that opens, go to the folder where you downloaded and unpacked **HellDownloader**, select the **`extension`** folder inside it (or simply press **`Ctrl+V`** in the folder box — `install.bat` already copied the path for you!), and click **Select Folder**.
-6. **Done!** Open any video in your browser and press **`Shift+F8`** on your keyboard (you can customize the shortcut anytime in the panel header).
-
-### 🗑️ How to Uninstall:
-* Double-click **`uninstall.bat`** — it removes `C:\Users\Public\HellDownloader` and cleans up the browser registry keys in 1 second.
-* Remove the **HellDownloader** card on `chrome://extensions/`.
-
----
-
 ## ✨ Key Features
 
 * **🎬 Full Video or ✂️ Frame-Accurate Fragment Cut:** Start (`S`) and End (`E`) handles mount directly onto the video player's native timeline scrub bar.
@@ -51,10 +18,31 @@
 
 ---
 
+## 📥 1-CLICK DOWNLOAD & INSTALLATION (Takes 1 Minute)
+
+> **No need to browse the source files above!** Click the big link below to immediately download the ready-to-use Windows installer package:
+
+### 👉 [**DOWNLOAD HellDownloader_Setup.zip (Windows 10/11 Installer)**](https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip) 👈
+
+![How to install HellDownloader on Windows and Chrome](docs/install-guide.svg)
+
+### Quick Summary:
+1. **Run `install.bat`:** Extract `HellDownloader_Setup.zip` into any folder and double-click **`install.bat`** (*if Windows SmartScreen prompts you, click **More info** → **Run anyway***).
+2. **Open Chrome Extensions:** Click the **Three Dots `⋮`** in the top-right corner of your browser → **Extensions** → **Manage Extensions** (or open `chrome://extensions`).
+3. **Enable & Load:** Turn **ON** **Developer mode** (top-right), then click **Load unpacked** (top-left).
+4. **Select the `extension` folder:** In the folder window that opens, select the **`extension`** subfolder inside your unpacked folder (or simply press **`Ctrl+V`**) and click **Select Folder**.
+5. **Done!** Open any video in your browser and press **`Shift+F8`** on your keyboard (you can change the shortcut anytime in the panel header).
+
+### 🗑️ How to Uninstall:
+* Double-click **`uninstall.bat`** — it removes the runtime files and cleans up the browser registry keys in 1 second.
+* Click **Remove** on the **HellDownloader** card on `chrome://extensions`.
+
+---
+
 ## ❤️ Support the Project
 
 HellDownloader is 100% free. If it saves you time and you enjoy using it, you can support the author:
-* 🔥 **[Donate via DonationAlerts (yumarkady)](https://www.donationalerts.com/r/yumarkady)**
+* 🔥 **[Donate via DonationAlerts](https://www.donationalerts.com/r/yumarkady)**
 
 Found a bug on a specific website? Click the **`😡 Report Bug`** button inside the extension panel after a download to send an instant diagnostic report to the developer.
 
