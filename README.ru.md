@@ -17,10 +17,25 @@
   </p>
 
   <p>
-    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest"><img src="https://img.shields.io/github/v/release/ArkadyYum/HellDownloader?label=Release&color=dc2626" alt="Release" /></a>
-    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip"><img src="https://img.shields.io/github/downloads/ArkadyYum/HellDownloader/total?label=Downloads&color=16a34a" alt="Downloads" /></a>
-    <img src="https://img.shields.io/badge/Платформа-Windows_10_%2F_11-0078d4" alt="Windows 10/11" />
-    <img src="https://img.shields.io/badge/Браузеры-Chrome_%7C_Яндекс_%7C_Edge_%7C_Brave_%7C_Opera-f59e0b" alt="Chromium Browsers" />
+    <a href="https://github.com/ArkadyYum/HellDownloader/stargazers"><img src="https://img.shields.io/github/stars/ArkadyYum/HellDownloader?style=for-the-badge&label=STARS&color=007ec6" alt="Stars" /></a>
+    <a href="https://github.com/ArkadyYum/HellDownloader/network/members"><img src="https://img.shields.io/github/forks/ArkadyYum/HellDownloader?style=for-the-badge&label=FORKS&color=007ec6" alt="Forks" /></a>
+    <a href="https://github.com/ArkadyYum/HellDownloader/issues"><img src="https://img.shields.io/github/issues/ArkadyYum/HellDownloader?style=for-the-badge&label=ISSUES&color=eab308" alt="Issues" /></a>
+    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest"><img src="https://img.shields.io/github/v/release/ArkadyYum/HellDownloader?style=for-the-badge&label=RELEASE&color=dc2626" alt="Release" /></a>
+    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip"><img src="https://img.shields.io/github/downloads/ArkadyYum/HellDownloader/total?style=for-the-badge&label=DOWNLOADS&color=16a34a" alt="Downloads" /></a>
+  </p>
+
+  <p>
+    <img src="https://img.shields.io/badge/PLATFORM-WINDOWS_10_%2F_11-0078d4?style=for-the-badge" alt="Windows 10/11" />
+    <img src="https://img.shields.io/badge/BROWSERS-CHROME_%7C_YANDEX_%7C_EDGE_%7C_BRAVE_%7C_OPERA-f97316?style=for-the-badge" alt="Chromium Browsers" />
+  </p>
+
+  <p>
+    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip"><b>Скачать установщик</b></a> &nbsp;·&nbsp;
+    <a href="#-скачать-и-установить-за-1-минуту"><b>Инструкция по установке</b></a> &nbsp;·&nbsp;
+    <a href="#-что-нового-в-v111"><b>Что нового (v1.1.1)</b></a> &nbsp;·&nbsp;
+    <a href="https://github.com/ArkadyYum/HellDownloader/discussions/1"><b>💬 Обсуждение и отзывы</b></a> &nbsp;·&nbsp;
+    <a href="https://github.com/ArkadyYum/HellDownloader/issues"><b>Сообщить о баге</b></a> &nbsp;·&nbsp;
+    <a href="https://www.donationalerts.com/r/yumarkady"><b>Поддержать проект</b></a>
   </p>
 
   <p>
@@ -43,7 +58,15 @@
 * **Работа с прямыми эфирами (Live):** запись отрывка прямо из идущего стрима.
 * **Встроенный DoH-мост:** стабильная работа даже при сбоях или ограничениях системного DNS провайдера.
 * **Поддержка всех Chromium-браузеров:** Google Chrome, Яндекс Браузер, Microsoft Edge, Brave, Opera / Opera GX, Vivaldi.
-* **Тихое автообновление:** раз в сутки в фоновом режиме проверяются обновления компонентов и движка.
+* **Управляемое автообновление:** фоновая проверка обновлений раз в сутки с возможностью в один клик включить или отключить её кнопкой **`Auto-update`** прямо в шапке панели.
+
+---
+
+## 🆕 Что нового в v1.1.1
+
+* **Переключатель `Auto-update`:** прямо в шапке расширения под кнопкой горячей клавиши появился переключатель автообновления (`✓ Auto-update`), позволяющий отключить автоматическую подгрузку обновлений с GitHub.
+* **Обновлённый дизайн и плавная анимация:** приведены к единому стилю шрифты, карточки и акцентные кнопки (`Preview Clip`, `Report Bug`, `Donate`), добавлено плавное раскрытие блока таймкодов при переключении в режим `Cut Fragment`, а нижняя панель обратной связи и доната выделена в единую градиентную плашку.
+* **Исправления скачивания и выбора качества:** устранён ложный статус `Operation cancelled` при очистке временного файла после завершения загрузки, а также исправлен сброс выбранного пользователем разрешения (`144p`–`4K` / `Audio Only`) во время фонового получения списка форматов.
 
 ---
 

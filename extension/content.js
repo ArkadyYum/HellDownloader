@@ -47,14 +47,20 @@
   let isRecordingHotkey = false;
   let suppressContextMenuUntil = 0;
   let hotkeyActiveDown = false;
+  let autoUpdateEnabled = true;
 
   (async () => {
     if (!isContextValid()) return;
     try {
-      const data = await chrome.storage.local.get('vcHotkeyV2');
+      const data = await chrome.storage.local.get(['vcHotkeyV2', 'vcAutoUpdateV1']);
       if (data?.vcHotkeyV2?.code) {
         currentHotkey = data.vcHotkeyV2;
         updateHotkeyButtonText();
+      }
+      if (typeof data?.vcAutoUpdateV1 === 'boolean') {
+        autoUpdateEnabled = data.vcAutoUpdateV1;
+        updateAutoUpdateUI();
+        chrome.runtime.sendMessage({ type: 'SET_AUTOUPDATE', enabled: autoUpdateEnabled }).catch(() => {});
       }
     } catch (_) {}
   })();
@@ -65,6 +71,10 @@
       if (changes.vcHotkeyV2?.newValue) {
         currentHotkey = changes.vcHotkeyV2.newValue;
         updateHotkeyButtonText();
+      }
+      if (typeof changes.vcAutoUpdateV1?.newValue === 'boolean') {
+        autoUpdateEnabled = changes.vcAutoUpdateV1.newValue;
+        updateAutoUpdateUI();
       }
     });
   } catch (_) {}
@@ -457,6 +467,96 @@
     return /(ttwstatic\.com|tiktok_web_login_static|playback1\.mp4|mradx\.net|target\.my\.com|ads\.vk\.com|googlesyndication\.com|doubleclick\.net|an\.yandex\.ru|yandexadexchange|serving-sys\.|eyeblaster\.|flashtalking\.|adriver\.ru|adfox\.ru|betweendigital\.|buzzoola\.|videonow\.ru|pladform\.ru|2mdn\.net)/i.test(urlStr);
   }
 
+  function parsePikabuCdnUrl(urlStr, explicitW = 0, explicitH = 0) {
+    if (!urlStr) return null;
+    const m = String(urlStr).match(/^(https?:\/\/cs\d*\.pikabu\.ru\/s\/[^"'?\s]+?_(\d+)x(\d+))(?:_(hslp|hlp|slp|lp|sd|low|preview))?(?:p\.(?:webp|jpg|jpeg|png)|\.(?:mp4|webm))?(?:\?.*)?$/i);
+    if (!m) return null;
+    const base = m[1];
+    const rawW = Number(explicitW) || Number(m[2]) || 0;
+    const rawH = Number(explicitH) || Number(m[3]) || 0;
+    const tag = (m[4] || '').toLowerCase();
+
+    const STANDARD_TIERS = [144, 240, 360, 480, 720, 1080, 1440, 2160];
+    let candH = (rawW > 0 && rawH > rawW) ? rawW : rawH;
+    if (rawW > rawH && rawW >= 240) {
+      const eq = Math.round((rawW * 9) / 16);
+      if (eq > candH) candH = eq;
+    } else if (rawH > rawW && rawH >= 240) {
+      const eq = Math.round((rawH * 9) / 16);
+      if (eq > candH) candH = eq;
+    }
+    let maxHeight = candH;
+    for (const t of STANDARD_TIERS) {
+      if (Math.abs(candH - t) / t <= 0.08) {
+        maxHeight = t;
+        break;
+      }
+    }
+
+    const qualities = [];
+    if (tag === 'lp' || (maxHeight <= 240 && tag !== 'slp' && tag !== 'sd' && tag !== 'hslp' && tag !== 'hlp')) {
+      qualities.push({ height: 240, audioOnly: false, container: 'mp4', label: '240p (Low)', streamUrl: `${base}_lp.mp4` });
+    } else if (tag === 'slp' || (maxHeight <= 480 && tag !== 'sd' && tag !== 'hslp' && tag !== 'hlp')) {
+      qualities.push({ height: 480, audioOnly: false, container: 'mp4', label: '480p (SD)', streamUrl: `${base}_slp.mp4` });
+      qualities.push({ height: 240, audioOnly: false, container: 'mp4', label: '240p (Low)', streamUrl: `${base}_low.mp4` });
+    } else {
+      const hdHeight = maxHeight >= 720 ? maxHeight : 720;
+      const hdSuffix = tag === 'hlp' ? 'hlp' : 'hslp';
+      qualities.push({ height: hdHeight, audioOnly: false, container: 'mp4', label: `${hdHeight}p (HD)`, streamUrl: `${base}_${hdSuffix}.mp4` });
+      if (hdSuffix.includes('s')) {
+        qualities.push({ height: 480, audioOnly: false, container: 'mp4', label: '480p (SD)', streamUrl: `${base}_sd.mp4` });
+      }
+      qualities.push({ height: 240, audioOnly: false, container: 'mp4', label: '240p (Low)', streamUrl: `${base}_low.mp4` });
+    }
+    qualities.push({
+      height: 0,
+      audioOnly: true,
+      container: 'mp3',
+      label: '🎵 Audio Only',
+      streamUrl: qualities[0].streamUrl
+    });
+
+    return {
+      base,
+      maxHeight: qualities[0].height,
+      defaultStreamUrl: qualities[0].streamUrl,
+      qualities
+    };
+  }
+
+  function getPikabuVideoInfo(videoEl) {
+    if (!/(^|\.)pikabu\.ru$/i.test(window.location.hostname)) return null;
+    const v = videoEl || activeVideo || findLocalVideo();
+    if (!v) return null;
+
+    const pkbPlayer = v.closest?.('[data-role="player"]');
+    const explicitW = Number(pkbPlayer?.dataset?.vcPkbWidth || v.dataset?.width) || 0;
+    const explicitH = Number(pkbPlayer?.dataset?.vcPkbHeight || v.dataset?.height) || 0;
+
+    const candidates = [];
+    if (pkbPlayer?.dataset?.vcPkbSource) candidates.push(pkbPlayer.dataset.vcPkbSource);
+    if (pkbPlayer?.dataset?.source) candidates.push(pkbPlayer.dataset.source);
+    if (v.dataset?.source) candidates.push(v.dataset.source);
+    if (v.currentSrc && /^https?:\/\//i.test(v.currentSrc)) candidates.push(v.currentSrc);
+    if (v.src && /^https?:\/\//i.test(v.src)) candidates.push(v.src);
+    const sourceEl = v.querySelector?.('source[src^="http"]');
+    if (sourceEl?.src) candidates.push(sourceEl.src);
+    if (v.poster && /^https?:\/\//i.test(v.poster)) candidates.push(v.poster);
+
+    if (pkbPlayer) {
+      const bgEl = pkbPlayer.querySelector?.('[style*="pikabu.ru/s/"]');
+      const bgStyle = bgEl?.getAttribute?.('style') || '';
+      const bgMatch = bgStyle.match(/https?:\/\/cs\d*\.pikabu\.ru\/s\/[^"'()\s]+/i);
+      if (bgMatch && bgMatch[0]) candidates.push(bgMatch[0]);
+    }
+
+    for (const c of candidates) {
+      const info = parsePikabuCdnUrl(c, explicitW, explicitH);
+      if (info) return info;
+    }
+    return null;
+  }
+
   function getDirectVideoSrc(videoEl) {
     const v = videoEl || findLocalVideo();
     if (!v) return '';
@@ -467,6 +567,8 @@
     if (/^https?:\/\//i.test(src) && !isAdStreamUrl(src)) return src;
     const sourceEl = v.querySelector('source[src^="http"]');
     if (sourceEl?.src && !isAdStreamUrl(sourceEl.src)) return sourceEl.src;
+    const pkbInfo = getPikabuVideoInfo(v);
+    if (pkbInfo?.defaultStreamUrl) return pkbInfo.defaultStreamUrl;
     return '';
   }
 
@@ -474,8 +576,9 @@
     if (!urlStr || !/^https?:\/\//i.test(urlStr)) return false;
     const lower = urlStr.toLowerCase();
     if (isAdStreamUrl(lower)) return false;
-    // Archive.org /details/ pages have multiple derivatives (.mp4 480p and .mkv 1080p), so always let yt-dlp list all formats
+    // Archive.org /details/ pages and Pikabu CDN videos have multiple quality derivatives
     if (lower.includes('archive.org/')) return false;
+    if (/cs\d*\.pikabu\.ru\/s\//i.test(lower) && /_(hslp|hlp|slp|sd|low)\.(mp4|webm)(\?|$)/i.test(lower)) return false;
     if (lower.includes(':hls:') || lower.includes('.m3u8') || lower.includes('.mpd')) return false;
     if (lower.includes('googlevideo.com/videoplayback')) return false;
     if (/[?&](bytestart|range)=/i.test(lower)) return false;
@@ -523,8 +626,8 @@
           if (/[?&]st=audio\b/i.test(lower)) continue;
           seen.add(u);
           let priority = 50;
-          if (lower.includes(':hls:manifest.m3u8') || lower.includes('master.m3u8') || lower.includes('.mpd') || (lower.includes('okcdn.ru/') && /[?&]ct=(6|8)\b/i.test(lower))) priority = 100;
-          else if (/\/playlists\/media\/video[-_]/i.test(lower)) priority = 30;
+          if (lower.includes(':hls:manifest.m3u8') || lower.includes('master.m3u8') || /\/pl\.m3u8(\?|$)/i.test(lower) || lower.includes('.mpd') || (lower.includes('okcdn.ru/') && /[?&]ct=(6|8)\b/i.test(lower))) priority = 100;
+          else if (/\/playlists\/media\/video[-_]/i.test(lower) || /\/stream_(low|sd|max|hd)\.m3u8(\?|$)/i.test(lower)) priority = 30;
           else if (lower.includes('.m3u8')) priority = 90;
           else if (lower.includes('/video/tos/') || lower.includes('mime_type=video_mp4')) priority = 85;
           scored.push({ u, priority });
@@ -1441,6 +1544,15 @@
       }
     }
 
+    // On Pikabu (pikabu.ru), read the title of the specific story card containing the active video
+    if (v && /(^|\.)pikabu\.ru$/i.test(window.location.hostname)) {
+      const pkbStory = v.closest?.('article.story, .story');
+      const pkbTitleEl = pkbStory?.querySelector?.('.story__title-link, .story__title');
+      if (pkbTitleEl?.textContent?.trim()) {
+        return pkbTitleEl.textContent.trim().slice(0, 140);
+      }
+    }
+
     const ytTitle = document.querySelector('h1.ytd-watch-metadata yt-formatted-string, #title h1 yt-formatted-string');
     if (ytTitle?.textContent?.trim()) return ytTitle.textContent.trim();
 
@@ -1955,7 +2067,13 @@
     if (cacheKey) {
       formatsCache.set(cacheKey, availableQualities);
     }
-    selectedQuality = availableQualities.find((q) => !q.audioOnly && q.height === 1080) || availableQualities[0];
+    const prevSelected = selectedQuality
+      ? availableQualities.find((q) =>
+          (selectedQuality.audioOnly && q.audioOnly) ||
+          (!selectedQuality.audioOnly && !q.audioOnly && q.height === selectedQuality.height)
+        )
+      : null;
+    selectedQuality = prevSelected || availableQualities.find((q) => !q.audioOnly && q.height === 1080) || availableQualities[0];
     if (selectedQuality?.fps >= 20) {
       activeVideoFps = Math.round(selectedQuality.fps);
     }
@@ -1999,6 +2117,24 @@
     const pageUrl = getCleanVideoUrl();
     const cacheKey = `${pageUrl}|${directSrc}`;
 
+    // Instant 0ms path for Pikabu multi-quality videos (HD / SD / Low)
+    const pkbInfo = (!useRemote && v) ? getPikabuVideoInfo(v) : null;
+    if (pkbInfo && pkbInfo.qualities.length > 0) {
+      availableQualities = pkbInfo.qualities;
+      const prevSelected = selectedQuality
+        ? availableQualities.find((q) =>
+            (selectedQuality.audioOnly && q.audioOnly) ||
+            (!selectedQuality.audioOnly && !q.audioOnly && q.height === selectedQuality.height)
+          )
+        : null;
+      selectedQuality = prevSelected || availableQualities[0];
+      renderQualities();
+      updateDownloadButtonLabel();
+      if (fetchBtn) fetchBtn.textContent = '✅ Qualities detected';
+      lastAutoFormatsKey = cacheKey;
+      return;
+    }
+
     // Instant 0ms path: if playing a direct single-file .mp4 / .webm (e.g. 2ch.su, imageboards, direct video links)
     if (!forceRefresh && directSrc && isDirectSingleFileVideoUrl(directSrc)) {
       const nativeH = getActiveNativeVideoHeight() || 720;
@@ -2018,7 +2154,13 @@
     if (!forceRefresh && formatsCache.has(cacheKey)) {
       const cached = formatsCache.get(cacheKey);
       availableQualities = cached;
-      selectedQuality = availableQualities.find((q) => !q.audioOnly && q.height === 1080) || availableQualities[0];
+      const prevSelected = selectedQuality
+        ? availableQualities.find((q) =>
+            (selectedQuality.audioOnly && q.audioOnly) ||
+            (!selectedQuality.audioOnly && !q.audioOnly && q.height === selectedQuality.height)
+          )
+        : null;
+      selectedQuality = prevSelected || availableQualities.find((q) => !q.audioOnly && q.height === 1080) || availableQualities[0];
       renderQualities();
       updateDownloadButtonLabel();
       lastAutoFormatsKey = cacheKey;
@@ -2140,8 +2282,18 @@
           <span>HellDownloader</span>
         </div>
         <div class="vc-header-actions">
-          <button type="button" class="vc-hotkey-btn" id="vc-hotkey-btn" title="Click to assign a custom shortcut key"></button>
-          <button type="button" class="vc-close-btn" id="vc-close-btn" title="Close">×</button>
+          <div class="vc-hotkey-col">
+            <button type="button" class="vc-hotkey-btn" id="vc-hotkey-btn" title="Click to assign a custom shortcut key"></button>
+            <button type="button" class="vc-autoupdate-btn vc-au-on" id="vc-autoupdate-btn" title="Toggle automatic updates from GitHub">
+              <span class="vc-au-box" id="vc-au-box">✓</span>
+              <span class="vc-au-label">Auto-update</span>
+            </button>
+          </div>
+          <button type="button" class="vc-close-btn" id="vc-close-btn" title="Close">
+            <svg viewBox="0 0 12 12" fill="none" aria-hidden="true">
+              <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
         </div>
       </div>
       <div class="vc-body">
@@ -2152,7 +2304,7 @@
           <button type="button" class="vc-mode-tab ${mode === 'fragment' ? 'vc-active' : ''}" data-mode="fragment">✂️ Cut Fragment</button>
         </div>
 
-        <div class="vc-fragment-box" id="vc-fragment-box">
+        <div class="vc-fragment-box ${mode === 'fragment' ? 'vc-expanded' : ''}" id="vc-fragment-box">
           <div class="vc-frag-summary ${mode === 'full' ? 'vc-full-mode' : ''}" id="vc-frag-summary">
             <span class="vc-duration-text ${mode === 'fragment' ? 'vc-hidden' : ''}" id="vc-frag-duration">Duration: 00:30:00</span>
             <div class="vc-duration-edit-wrap ${mode !== 'fragment' ? 'vc-hidden' : ''}" id="vc-duration-edit-wrap">
@@ -2163,28 +2315,30 @@
             <button type="button" class="vc-preview-btn ${mode !== 'fragment' ? 'vc-hidden' : ''}" id="vc-preview-btn">▶ Preview Clip</button>
           </div>
 
-          <div class="vc-time-rows-wrap ${mode !== 'fragment' ? 'vc-hidden' : ''}" id="vc-time-rows-wrap">
-            <div class="vc-time-row">
-              <span class="vc-time-label"><span class="vc-dot-green"></span>Start</span>
-              <input type="text" class="vc-time-input" id="vc-input-start" value="00:00:00" />
-              <div class="vc-step-group">
-                <button type="button" class="vc-mini-btn" data-step="start:-1s" title="Step back 1 second">◀ 1s</button>
-                <button type="button" class="vc-mini-btn" data-step="start:-1f" title="Step back 1 frame">◀ 1f</button>
-                <button type="button" class="vc-mini-btn" data-step="start:+1f" title="Step forward 1 frame">1f ▶</button>
-                <button type="button" class="vc-mini-btn" data-step="start:+1s" title="Step forward 1 second">1s ▶</button>
-                <button type="button" class="vc-mini-btn vc-pin-btn" id="vc-set-start-now" title="Set Start to current player frame">📍</button>
+          <div class="vc-time-collapse ${mode === 'fragment' ? 'vc-open' : ''}" id="vc-time-collapse">
+            <div class="vc-time-rows-wrap" id="vc-time-rows-wrap">
+              <div class="vc-time-row">
+                <span class="vc-time-label"><span class="vc-dot-green"></span>Start</span>
+                <input type="text" class="vc-time-input" id="vc-input-start" value="00:00:00" />
+                <div class="vc-step-group">
+                  <button type="button" class="vc-mini-btn" data-step="start:-1s" title="Step back 1 second">◀ 1s</button>
+                  <button type="button" class="vc-mini-btn" data-step="start:-1f" title="Step back 1 frame">◀ 1f</button>
+                  <button type="button" class="vc-mini-btn" data-step="start:+1f" title="Step forward 1 frame">1f ▶</button>
+                  <button type="button" class="vc-mini-btn" data-step="start:+1s" title="Step forward 1 second">1s ▶</button>
+                  <button type="button" class="vc-mini-btn vc-pin-btn" id="vc-set-start-now" title="Set Start to current player frame">📍</button>
+                </div>
               </div>
-            </div>
 
-            <div class="vc-time-row">
-              <span class="vc-time-label"><span class="vc-dot-red"></span>End</span>
-              <input type="text" class="vc-time-input" id="vc-input-end" value="00:30:00" />
-              <div class="vc-step-group">
-                <button type="button" class="vc-mini-btn" data-step="end:-1s" title="Step back 1 second">◀ 1s</button>
-                <button type="button" class="vc-mini-btn" data-step="end:-1f" title="Step back 1 frame">◀ 1f</button>
-                <button type="button" class="vc-mini-btn" data-step="end:+1f" title="Step forward 1 frame">1f ▶</button>
-                <button type="button" class="vc-mini-btn" data-step="end:+1s" title="Step forward 1 second">1s ▶</button>
-                <button type="button" class="vc-mini-btn vc-pin-btn" id="vc-set-end-now" title="Set End to current player frame">📍</button>
+              <div class="vc-time-row">
+                <span class="vc-time-label"><span class="vc-dot-red"></span>End</span>
+                <input type="text" class="vc-time-input" id="vc-input-end" value="00:30:00" />
+                <div class="vc-step-group">
+                  <button type="button" class="vc-mini-btn" data-step="end:-1s" title="Step back 1 second">◀ 1s</button>
+                  <button type="button" class="vc-mini-btn" data-step="end:-1f" title="Step back 1 frame">◀ 1f</button>
+                  <button type="button" class="vc-mini-btn" data-step="end:+1f" title="Step forward 1 frame">1f ▶</button>
+                  <button type="button" class="vc-mini-btn" data-step="end:+1s" title="Step forward 1 second">1s ▶</button>
+                  <button type="button" class="vc-mini-btn vc-pin-btn" id="vc-set-end-now" title="Set End to current player frame">📍</button>
+                </div>
               </div>
             </div>
           </div>
@@ -2237,7 +2391,17 @@
 
     bindPanelEvents();
     updateHotkeyButtonText();
+    updateAutoUpdateUI();
     renderQualities();
+  }
+
+  function updateAutoUpdateUI() {
+    const btn = byId('vc-autoupdate-btn');
+    const box = byId('vc-au-box');
+    if (!btn || !box) return;
+    btn.classList.toggle('vc-au-on', autoUpdateEnabled);
+    btn.classList.toggle('vc-au-off', !autoUpdateEnabled);
+    box.textContent = autoUpdateEnabled ? '✓' : '';
   }
 
   function getHotkeyLabel(hk) {
@@ -2255,7 +2419,7 @@
   function updateHotkeyButtonText() {
     const btn = byId('vc-hotkey-btn');
     if (!btn) return;
-    btn.textContent = isRecordingHotkey ? 'Press a key...' : `⌨️ ${getHotkeyLabel(currentHotkey)}`;
+    btn.textContent = isRecordingHotkey ? 'Press a key...' : getHotkeyLabel(currentHotkey);
     btn.classList.toggle('vc-recording', isRecordingHotkey);
   }
 
@@ -2574,6 +2738,15 @@
       updateHotkeyButtonText();
     });
 
+    byId('vc-autoupdate-btn')?.addEventListener('click', async () => {
+      autoUpdateEnabled = !autoUpdateEnabled;
+      updateAutoUpdateUI();
+      try {
+        await chrome.storage.local.set({ vcAutoUpdateV1: autoUpdateEnabled });
+      } catch (_) {}
+      chrome.runtime.sendMessage({ type: 'SET_AUTOUPDATE', enabled: autoUpdateEnabled }).catch(() => {});
+    });
+
     const header = byId('vc-drag-handle');
     let isDraggingPanel = false;
     let panelPointerId = null;
@@ -2650,7 +2823,8 @@
       tab.addEventListener('click', () => {
         mode = tab.dataset.mode;
         panelEl.querySelectorAll('.vc-mode-tab').forEach((t) => t.classList.toggle('vc-active', t === tab));
-        byId('vc-time-rows-wrap')?.classList.toggle('vc-hidden', mode !== 'fragment');
+        byId('vc-fragment-box')?.classList.toggle('vc-expanded', mode === 'fragment');
+        byId('vc-time-collapse')?.classList.toggle('vc-open', mode === 'fragment');
         byId('vc-preview-btn')?.classList.toggle('vc-hidden', mode !== 'fragment');
         byId('vc-frag-summary')?.classList.toggle('vc-full-mode', mode === 'full');
         syncSlidersUI();
@@ -2816,7 +2990,7 @@
         const res = await chrome.runtime.sendMessage({
           type: 'START_DOWNLOAD',
           url: getCleanVideoUrl(),
-          videoSrc: getDirectVideoSrc(activeVideo) || remoteIframeState?.videoSrc || '',
+          videoSrc: selectedQuality?.streamUrl || getDirectVideoSrc(activeVideo) || remoteIframeState?.videoSrc || '',
           extraStreams: collectAllKnownStreams(),
           title: getVideoTitle(),
           mode,
@@ -3335,11 +3509,13 @@
         lastDownloadError = '';
         if (dlBtn) dlBtn.disabled = false;
         if (progFill) progFill.style.width = '100%';
-        progStatus.textContent = `✅ Done! Saved: ${ev.fileName}`;
+        const mediaLabel = selectedQuality?.audioOnly ? 'Audio' : 'Video';
+        progStatus.textContent = `✅ ${mediaLabel} successfully downloaded`;
         revealBtn?.classList.remove('vc-hidden');
         cancelBtn?.classList.add('vc-hidden');
         byId('vc-post-download-wrap')?.classList.remove('vc-hidden');
       } else if (ev.type === 'cancelled') {
+        if (!isDownloading && lastDownloadId !== null) return;
         isDownloading = false;
         if (dlBtn) dlBtn.disabled = false;
         if (progFill) progFill.style.width = '0%';

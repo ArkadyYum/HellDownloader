@@ -8,5 +8,7 @@ native_host/config.json
 native_host/com.vibecoding.videoclipper.json
 native_host/host_launcher.bat
 native_host/bin/*.exe
+DO NOT SHARE.txt
+.env*
 .DS_Store
 Thumbs.db

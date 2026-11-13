@@ -83,8 +83,31 @@ function findYtDlp() {
   return localBin;
 }
 
-// Silent 24h auto-updates from official GitHub repository
+// Silent 24h auto-updates from official GitHub repository (can be toggled via the Autoupdate checkbox in the UI)
 const GITHUB_REPO = 'ArkadyYum/HellDownloader';
+const SETTINGS_FILE = path.join(publicSafeDir, 'settings.json');
+
+function isAutoUpdateEnabled() {
+  try {
+    if (fs.existsSync(SETTINGS_FILE)) {
+      const data = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8'));
+      if (typeof data.autoUpdate === 'boolean') return data.autoUpdate;
+    }
+  } catch (_) {}
+  return true;
+}
+
+function setAutoUpdateEnabled(enabled) {
+  try {
+    let data = {};
+    if (fs.existsSync(SETTINGS_FILE)) {
+      try { data = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8')) || {}; } catch (_) {}
+    }
+    data.autoUpdate = Boolean(enabled);
+    fs.mkdirSync(publicSafeDir, { recursive: true });
+    fs.writeFileSync(SETTINGS_FILE, JSON.stringify(data, null, 2), 'utf8');
+  } catch (_) {}
+}
 
 function fetchHttpsText(urlStr) {
   return new Promise((resolve) => {
@@ -106,9 +129,9 @@ function fetchHttpsText(urlStr) {
   });
 }
 
-// Silently auto-update HellDownloader scripts (host.js + extension/*) from GitHub once every 24 hours
+// Silently auto-update HellDownloader scripts (host.js + extension/*) from GitHub once every 24 hours (only when Autoupdate is enabled)
 async function maybeAutoUpdateFromGitHub() {
-  if (!GITHUB_REPO) return;
+  if (!GITHUB_REPO || !isAutoUpdateEnabled()) return;
   try {
     const stampFile = path.join(getAsciiTempDir(), 'last_github_update.txt');
     const now = Date.now();
@@ -296,6 +319,16 @@ function isKodikStreamUrl(urlStr) {
 
 function buildKodikResolutionUrl(urlStr, targetHeight) {
   return (urlStr || '').replace(/\/(240|360|480|720|1080)\.mp4/i, `/${targetHeight}.mp4`);
+}
+
+function isPikabuStreamUrl(urlStr) {
+  return /^https?:\/\/cs\d*\.pikabu\.ru\/s\/[^"'?\s]+?_\d+x\d+_(hslp|hlp|slp|lp|sd|low)\.mp4(\?|$)/i.test(urlStr || '');
+}
+
+function buildPikabuResolutionUrl(urlStr, targetHeight) {
+  if (!isPikabuStreamUrl(urlStr)) return urlStr;
+  const suffix = targetHeight >= 720 ? '_hslp.mp4' : (targetHeight >= 480 ? '_sd.mp4' : '_low.mp4');
+  return String(urlStr).replace(/_(hslp|hlp|slp|lp|sd|low)\.mp4(\?|$)/i, `${suffix}$2`);
 }
 
 let activeProc = null;
@@ -635,9 +668,7 @@ async function runDumpJsonWithCookieFallback(ytdlp, ffmpegDir, targetUrl, cookie
   return res;
 }
 
-const _TG_BYTES = [52,37,45,21,27,7,0,7,125,121,105,27,32,47,88,36,18,237,189,203,192,150,234,152,222,254,186,168,134,179,145,158,140,153,162,54,102,93,78,77,17,90,0,94,43,25];
-const TELEGRAM_BOT_TOKEN = _TG_BYTES.map((b, i) => String.fromCharCode(b ^ ((i * 7 + 13) & 0xFF))).join('');
-const TELEGRAM_DEFAULT_CHAT_ID = '7655055081';
+const FEEDBACK_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwkPMkhX8mCEWPhgxfpAeJytluBnNJs8-LKDZqEtUSfuvocZKHy9mOZLTEGYJQ7LULB2A/exec';
 const APP_FEEDBACK_TAG = '#HellDownloader';
 
 function getRecentDebugLogSnippet(maxLines = 14) {
@@ -655,82 +686,54 @@ function getRecentDebugLogSnippet(maxLines = 14) {
   }
 }
 
-function callTelegramApi(method, payloadObj = null) {
-  return new Promise(async (resolve) => {
-    const bodyStr = payloadObj ? JSON.stringify(payloadObj) : '';
-    const tryRequest = (hostIpOrDomain) => new Promise((resTry) => {
+function sendFeedbackViaWebhook(textPayload, urlStr = FEEDBACK_WEBHOOK_URL, redirectsLeft = 3) {
+  return new Promise((resolve) => {
+    try {
+      const u = new URL(urlStr);
+      const isPost = redirectsLeft === 3;
+      const bodyStr = isPost ? JSON.stringify({ text: textPayload }) : '';
       const req = https.request(
         {
-          host: hostIpOrDomain,
-          servername: 'api.telegram.org',
+          hostname: u.hostname,
+          path: u.pathname + u.search,
           port: 443,
-          path: `/bot${TELEGRAM_BOT_TOKEN}/${method}`,
-          method: payloadObj ? 'POST' : 'GET',
-          headers: payloadObj
+          method: isPost ? 'POST' : 'GET',
+          headers: isPost
             ? {
                 'Content-Type': 'application/json; charset=utf-8',
                 'Content-Length': Buffer.byteLength(bodyStr, 'utf8')
               }
             : {},
-          timeout: 7000
+          timeout: 10000
         },
         (res) => {
+          if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirectsLeft > 0) {
+            res.resume();
+            resolve(sendFeedbackViaWebhook(textPayload, res.headers.location, redirectsLeft - 1));
+            return;
+          }
           let data = '';
           res.on('data', (c) => { data += c; });
           res.on('end', () => {
             try {
-              resTry(JSON.parse(data));
+              resolve(JSON.parse(data));
             } catch (_) {
-              resTry({ ok: false, description: 'Invalid JSON from Telegram API' });
+              resolve({ ok: res.statusCode >= 200 && res.statusCode < 300 });
             }
           });
         }
       );
-      req.on('error', (err) => resTry({ ok: false, description: err.message }));
+      req.on('error', (err) => resolve({ ok: false, description: err.message }));
       req.on('timeout', () => {
         req.destroy();
-        resTry({ ok: false, description: 'Telegram API timeout' });
+        resolve({ ok: false, description: 'Feedback webhook timeout' });
       });
-      if (payloadObj) req.write(bodyStr, 'utf8');
+      if (isPost) req.write(bodyStr, 'utf8');
       req.end();
-    });
-
-    let result = await tryRequest('api.telegram.org');
-    if (!result || !result.ok) {
-      const dohIp = await resolveHostWithDoH('api.telegram.org');
-      if (dohIp && dohIp !== 'api.telegram.org') {
-        result = await tryRequest(dohIp);
-      }
+    } catch (err) {
+      resolve({ ok: false, description: err.message });
     }
-    resolve(result || { ok: false, description: 'Network error' });
   });
-}
-
-async function resolveTelegramChatId() {
-  if (TELEGRAM_DEFAULT_CHAT_ID) return TELEGRAM_DEFAULT_CHAT_ID;
-  const chatIdFile = path.join(publicSafeDir, 'tg_chat_id.txt');
-  try {
-    if (fs.existsSync(chatIdFile)) {
-      const saved = fs.readFileSync(chatIdFile, 'utf8').trim();
-      if (/^-?\d+$/.test(saved)) return saved;
-    }
-  } catch (_) {}
-
-  const updates = await callTelegramApi('getUpdates');
-  if (updates?.ok && Array.isArray(updates.result)) {
-    for (let i = updates.result.length - 1; i >= 0; i--) {
-      const u = updates.result[i];
-      const chatId = u?.message?.chat?.id || u?.channel_post?.chat?.id || u?.my_chat_member?.chat?.id;
-      if (chatId) {
-        try {
-          fs.mkdirSync(publicSafeDir, { recursive: true });
-          fs.writeFileSync(chatIdFile, String(chatId), 'utf8');
-        } catch (_) {}
-        return String(chatId);
-      }
-    }
-  }
-  return null;
 }
 
 async function handleMessage(msg) {
@@ -761,17 +764,6 @@ async function handleMessage(msg) {
         fs.appendFileSync(historyFile, `${JSON.stringify(entry)}\n`, 'utf8');
       } catch (_) {}
 
-      const chatId = await resolveTelegramChatId();
-      if (!chatId) {
-        sendMessage({
-          requestId,
-          type: 'feedback_result',
-          ok: false,
-          error: 'Бот @devhellbot ещё не активирован владельцем (напишите /start боту @devhellbot в Telegram)'
-        });
-        return;
-      }
-
       const lines = [
         `📦 Приложение: ${APP_FEEDBACK_TAG}`,
         `🌐 Ссылка: ${msg.url || msg.pageHref || '—'}`,
@@ -790,25 +782,27 @@ async function handleMessage(msg) {
       lines.push('', '📋 Лог (debug.log):', logSnippet.slice(0, 2400));
 
       const textPayload = lines.join('\n').slice(0, 4050);
-      const tgRes = await callTelegramApi('sendMessage', {
-        chat_id: chatId,
-        text: textPayload,
-        disable_web_page_preview: true
-      });
+      const webhookRes = await sendFeedbackViaWebhook(textPayload);
 
-      if (tgRes?.ok) {
+      if (webhookRes?.ok) {
         sendMessage({ requestId, type: 'feedback_result', ok: true });
       } else {
         sendMessage({
           requestId,
           type: 'feedback_result',
           ok: false,
-          error: tgRes?.description || 'Ошибка отправки в Telegram'
+          error: webhookRes?.description || webhookRes?.error || 'Ошибка отправки отчёта'
         });
       }
     } catch (err) {
       sendMessage({ requestId, type: 'feedback_result', ok: false, error: err.message });
     }
+    return;
+  }
+
+  if (action === 'set_autoupdate') {
+    setAutoUpdateEnabled(Boolean(msg.enabled));
+    sendMessage({ requestId, type: 'autoupdate_set', ok: true, enabled: Boolean(msg.enabled) });
     return;
   }
 
@@ -825,7 +819,12 @@ async function handleMessage(msg) {
     return;
   }
 
-  if (action === 'cancel' || action === 'cleanup') {
+  if (action === 'cleanup') {
+    cleanupAll();
+    return;
+  }
+
+  if (action === 'cancel') {
     cleanupAll();
     sendMessage({ requestId, type: 'cancelled', message: 'Operation cancelled' });
     return;
@@ -1365,10 +1364,16 @@ async function handleMessage(msg) {
 
     // Try the active <video>'s own direct stream URL before generic tab candidates (unless Kodik resolution switching is active)
     if (!hasKodikCandidate && msg.videoSrc && /^https?:\/\//i.test(msg.videoSrc) && !isAdNetworkUrl(msg.videoSrc) && (!audioOnly ? !isAudioOnlyStreamUrl(msg.videoSrc) : true)) {
+      if (isPikabuStreamUrl(msg.videoSrc) && !audioOnly) {
+        const pkbUrl = buildPikabuResolutionUrl(msg.videoSrc, height);
+        if (pkbUrl !== msg.videoSrc) {
+          addUrlAttempts(attempts, pkbUrl, msg.url);
+        }
+      }
       addUrlAttempts(attempts, msg.videoSrc, msg.url);
     }
 
-    // Add captured stream candidates (with Kodik resolution substitution if applicable)
+    // Add captured stream candidates (with Kodik / Pikabu resolution substitution if applicable)
     for (const cand of candidates.slice(0, 6)) {
       if (isAdNetworkUrl(cand.url)) continue;
       if (!audioOnly && isAudioOnlyStreamUrl(cand.url)) continue;
@@ -1377,6 +1382,11 @@ async function handleMessage(msg) {
         const resUrl = buildKodikResolutionUrl(cand.url, height);
         if (resUrl !== cand.url) {
           addUrlAttempts(attempts, resUrl, ref);
+        }
+      } else if (isPikabuStreamUrl(cand.url) && !audioOnly) {
+        const pkbUrl = buildPikabuResolutionUrl(cand.url, height);
+        if (pkbUrl !== cand.url) {
+          addUrlAttempts(attempts, pkbUrl, ref);
         }
       }
       addUrlAttempts(attempts, cand.url, ref);

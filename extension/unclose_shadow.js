@@ -310,4 +310,34 @@
     document.addEventListener('loadedmetadata', syncAllSocialVideos, true);
     document.addEventListener('play', syncAllSocialVideos, true);
   }
+
+  // On Pikabu (pikabu.ru), preserve data-source / data-hls / data-width / data-height on [data-role="player"]
+  // both from initial .vue-video-player elements and from mounted Vue 3 __vue_app__._props
+  if (typeof window !== 'undefined' && /(^|\.)pikabu\.ru$/i.test(window.location.hostname)) {
+    const syncPikabuPlayers = () => {
+      try {
+        for (const v of document.querySelectorAll('video.vue-video-player[data-source]')) {
+          const p = v.parentElement;
+          if (p) {
+            if (v.dataset.source) p.dataset.vcPkbSource = v.dataset.source;
+            if (v.dataset.hls) p.dataset.vcPkbHls = v.dataset.hls;
+            if (v.dataset.width) p.dataset.vcPkbWidth = v.dataset.width;
+            if (v.dataset.height) p.dataset.vcPkbHeight = v.dataset.height;
+          }
+        }
+        for (const el of document.querySelectorAll('[data-role="player"]')) {
+          const props = el.__vue_app__?._props || el.__vue_app__?._container?._vnode?.component?.props;
+          if (props && typeof props === 'object') {
+            if (props.source && !el.dataset.vcPkbSource) el.dataset.vcPkbSource = String(props.source);
+            if (props.hls && !el.dataset.vcPkbHls) el.dataset.vcPkbHls = String(props.hls);
+            if (props.width && !el.dataset.vcPkbWidth) el.dataset.vcPkbWidth = String(props.width);
+            if (props.height && !el.dataset.vcPkbHeight) el.dataset.vcPkbHeight = String(props.height);
+          }
+        }
+      } catch (_) {}
+    };
+    setInterval(syncPikabuPlayers, 500);
+    document.addEventListener('DOMContentLoaded', syncPikabuPlayers);
+    document.addEventListener('play', syncPikabuPlayers, true);
+  }
 })();

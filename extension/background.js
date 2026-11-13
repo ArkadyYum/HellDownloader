@@ -84,8 +84,8 @@ function scoreStreamUrl(urlStr) {
   if (/(vk\.com|vkvideo\.ru)\/video_ext\.php/i.test(lower) || /(vk\.com|vkvideo\.ru)\/video-?\d+_\d+/i.test(lower)) return 110;
   if (/\.mp4:hls:manifest\.m3u8/i.test(lower)) return 108;
   if (lower.includes('okcdn.ru/') && /[?&]ct=(6|8)\b/i.test(lower)) return 106;
-  if (lower.includes('master.m3u8') || lower.includes('manifest.mpd') || /\.mpd(\?|$)/.test(lower)) return 105;
-  if (/\/playlists\/media\/video[-_]/i.test(lower)) return 30; // Single-quality HLS sub-playlist (prefer master.m3u8 or page URL)
+  if (lower.includes('master.m3u8') || /\/pl\.m3u8(\?|$)/i.test(lower) || lower.includes('manifest.mpd') || /\.mpd(\?|$)/.test(lower)) return 105;
+  if (/\/playlists\/media\/video[-_]/i.test(lower) || /\/stream_(low|sd|max|hd)\.m3u8(\?|$)/i.test(lower)) return 30; // Single-quality HLS sub-playlist (prefer master.m3u8 or page URL)
   if (lower.includes('manifest.m3u8') || /\.m3u8(\?|$)/.test(lower)) return 100;
   if (/rutube\.ru\/play\/embed\//i.test(lower)) return 95;
   if (/\/(1080|720|480|360)\.mp4/.test(lower)) return 80;
@@ -443,6 +443,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === 'PING_NATIVE') {
       const res = await runOneShotNative({
         action: 'ping',
+        requestId: String(Date.now())
+      });
+      sendResponse(res);
+      return;
+    }
+
+    if (message.type === 'SET_AUTOUPDATE') {
+      const res = await runOneShotNative({
+        action: 'set_autoupdate',
+        enabled: Boolean(message.enabled),
         requestId: String(Date.now())
       });
       sendResponse(res);

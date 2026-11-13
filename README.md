@@ -17,10 +17,25 @@
   </p>
 
   <p>
-    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest"><img src="https://img.shields.io/github/v/release/ArkadyYum/HellDownloader?label=Release&color=dc2626" alt="Release" /></a>
-    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip"><img src="https://img.shields.io/github/downloads/ArkadyYum/HellDownloader/total?label=Downloads&color=16a34a" alt="Downloads" /></a>
-    <img src="https://img.shields.io/badge/Platform-Windows_10_%2F_11-0078d4" alt="Windows 10/11" />
-    <img src="https://img.shields.io/badge/Browser-Chrome_%7C_Edge_%7C_Brave_%7C_Opera_%7C_Yandex-f59e0b" alt="Chromium Browsers" />
+    <a href="https://github.com/ArkadyYum/HellDownloader/stargazers"><img src="https://img.shields.io/github/stars/ArkadyYum/HellDownloader?style=for-the-badge&label=STARS&color=007ec6" alt="Stars" /></a>
+    <a href="https://github.com/ArkadyYum/HellDownloader/network/members"><img src="https://img.shields.io/github/forks/ArkadyYum/HellDownloader?style=for-the-badge&label=FORKS&color=007ec6" alt="Forks" /></a>
+    <a href="https://github.com/ArkadyYum/HellDownloader/issues"><img src="https://img.shields.io/github/issues/ArkadyYum/HellDownloader?style=for-the-badge&label=ISSUES&color=eab308" alt="Issues" /></a>
+    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest"><img src="https://img.shields.io/github/v/release/ArkadyYum/HellDownloader?style=for-the-badge&label=RELEASE&color=dc2626" alt="Release" /></a>
+    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip"><img src="https://img.shields.io/github/downloads/ArkadyYum/HellDownloader/total?style=for-the-badge&label=DOWNLOADS&color=16a34a" alt="Downloads" /></a>
+  </p>
+
+  <p>
+    <img src="https://img.shields.io/badge/PLATFORM-WINDOWS_10_%2F_11-0078d4?style=for-the-badge" alt="Windows 10/11" />
+    <img src="https://img.shields.io/badge/BROWSERS-CHROME_%7C_EDGE_%7C_BRAVE_%7C_OPERA_%7C_YANDEX-f97316?style=for-the-badge" alt="Chromium Browsers" />
+  </p>
+
+  <p>
+    <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip"><b>Download Installer</b></a> &nbsp;·&nbsp;
+    <a href="#-1-click-download--installation-takes-1-minute"><b>Installation Guide</b></a> &nbsp;·&nbsp;
+    <a href="#-whats-new-in-v111"><b>What's New (v1.1.1)</b></a> &nbsp;·&nbsp;
+    <a href="https://github.com/ArkadyYum/HellDownloader/discussions/1"><b>💬 Discussions & Feedback</b></a> &nbsp;·&nbsp;
+    <a href="https://github.com/ArkadyYum/HellDownloader/issues"><b>Report Bug</b></a> &nbsp;·&nbsp;
+    <a href="https://www.donationalerts.com/r/yumarkady"><b>Donate</b></a>
   </p>
 
   <p>
@@ -43,7 +58,15 @@
 * **Live Stream Recording:** Record clips directly from active live streams.
 * **Built-in DoH Bridge:** Works reliably even when your ISP's DNS is unstable or restricted.
 * **Works Across All Chromium Browsers:** Google Chrome, Microsoft Edge, Brave, Opera / Opera GX, Vivaldi, Yandex Browser.
-* **Silent Auto-Updates:** Automatically checks for core & media engine updates once every 24 hours in the background.
+* **Configurable Auto-Updates:** Automatically checks for core & media engine updates in the background, with a 1-click **`Auto-update`** toggle right in the panel header if you prefer manual control.
+
+---
+
+## 🆕 What's New in v1.1.1
+
+* **Added `Auto-update` Toggle:** You can now enable or disable automatic GitHub updates directly from the top header bar (`✓ Auto-update`).
+* **Refined UI & Smooth Animations:** Unified typography and borders across the panel, added smooth accordion unfolding when switching to `Cut Fragment` mode, and redesigned action buttons (`Preview Clip`, `Report Bug`, `Donate`) in a cohesive solid style.
+* **Download Status & Quality Selection Fixes:** Fixed an issue where post-download cleanup could display a false `Operation cancelled` status, and preserved the user's selected resolution (`144p`–`4K` / `Audio Only`) while background format detection completes.
 
 ---
 
