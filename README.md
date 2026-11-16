@@ -32,7 +32,7 @@
   <p>
     <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip"><b>Download Installer</b></a> &nbsp;·&nbsp;
     <a href="#-1-click-download--installation-takes-1-minute"><b>Installation Guide</b></a> &nbsp;·&nbsp;
-    <a href="#-whats-new-in-v112"><b>What's New (v1.1.2)</b></a> &nbsp;·&nbsp;
+    <a href="#-whats-new-in-v120"><b>What's New (v1.2.0)</b></a> &nbsp;·&nbsp;
     <a href="https://github.com/ArkadyYum/HellDownloader/discussions/1"><b>💬 Discussions & Feedback</b></a> &nbsp;·&nbsp;
     <a href="https://github.com/ArkadyYum/HellDownloader/issues"><b>Report Bug</b></a> &nbsp;·&nbsp;
     <a href="https://www.donationalerts.com/r/yumarkady"><b>Donate</b></a>
@@ -66,7 +66,7 @@
 
 ---
 
-## 🆕 What's New in v1.1.2
+## 🆕 What's New in v1.2.0
 
 * **Minimalist Compact HUD & `Advanced View`:** Clean 4-column quality grid (`144p`–`4K` + `MP3`) and one-click mode tabs by default; expandable `Advanced View` houses frame-step controls (`1f` / `1s`), duration lock (`🔒`), manual format refresh, and settings (`⚙️` shortcut & `Auto-update`).
 * **Active Video Highlight Border:** Soft green highlight frame around the active `<video>` in `Full Video` mode so you always see which video is targeted on multi-video feeds.

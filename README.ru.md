@@ -32,7 +32,7 @@
   <p>
     <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip"><b>Скачать установщик</b></a> &nbsp;·&nbsp;
     <a href="#-скачать-и-установить-за-1-минуту"><b>Инструкция по установке</b></a> &nbsp;·&nbsp;
-    <a href="#-что-нового-в-v112"><b>Что нового (v1.1.2)</b></a> &nbsp;·&nbsp;
+    <a href="#-что-нового-в-v120"><b>Что нового (v1.2.0)</b></a> &nbsp;·&nbsp;
     <a href="https://github.com/ArkadyYum/HellDownloader/discussions/1"><b>💬 Обсуждение и отзывы</b></a> &nbsp;·&nbsp;
     <a href="https://github.com/ArkadyYum/HellDownloader/issues"><b>Сообщить о баге</b></a> &nbsp;·&nbsp;
     <a href="https://www.donationalerts.com/r/yumarkady"><b>Поддержать проект</b></a>
@@ -66,7 +66,7 @@
 
 ---
 
-## 🆕 Что нового в v1.1.2
+## 🆕 Что нового в v1.2.0
 
 * **Минималистичный Compact HUD и `Advanced View`:** компактная сетка качеств по 4 в ряд (`144p`–`4K` + `MP3`) и переключатель режимов по умолчанию; раскрываемый блок `Advanced View` объединяет покадровую подгонку (`1f` / `1s`), замок длительности (`🔒`), ручное обновление форматов и настройки (`⚙️` горячая клавиша и `Auto-update`).
 * **Зелёная подсветка активного видео:** в режиме `Full Video` вокруг активного плеера отображается мягкая зелёная рамка, чтобы на страницах с лентой всегда было видно, какое видео будет скачано.
