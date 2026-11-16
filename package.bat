@@ -10,6 +10,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -Command ^
   "New-Item -ItemType Directory -Path (Join-Path $stage 'HellDownloader\extension') -Force | Out-Null; " ^
   "New-Item -ItemType Directory -Path (Join-Path $stage 'HellDownloader\native_host\bin') -Force | Out-Null; " ^
   "Copy-Item (Join-Path $root 'extension\*') (Join-Path $stage 'HellDownloader\extension') -Recurse -Force; " ^
+  "Remove-Item (Join-Path $stage 'HellDownloader\extension\icons\icon-512.png') -Force -ErrorAction SilentlyContinue; " ^
   "Copy-Item (Join-Path $root 'native_host\host.js') (Join-Path $stage 'HellDownloader\native_host\host.js') -Force; " ^
   "Copy-Item (Join-Path $root 'native_host\register.js') (Join-Path $stage 'HellDownloader\native_host\register.js') -Force; " ^
   "Copy-Item (Join-Path $root 'native_host\ext_key.json') (Join-Path $stage 'HellDownloader\native_host\ext_key.json') -Force; " ^

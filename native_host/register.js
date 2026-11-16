@@ -33,7 +33,7 @@ const manifestPath = path.join(extDir, 'manifest.json');
 let manifest = {
   manifest_version: 3,
   name: 'HellDownloader',
-  version: '1.1.0',
+  version: '1.1.2',
   description: 'HellDownloader — universal HTML5 video & frame-accurate fragment clipper up to 4K.',
   key: keyData.keyBase64,
   icons: {
@@ -154,7 +154,7 @@ try {
   }
 } catch (_) {}
 
-// Write bootstrap.js that auto-syncs host.js from source folder (if newer) and runs from pure-ASCII dstHostJs
+// Write bootstrap.js that auto-syncs host.js from source folder (only if source is strictly newer) and runs from pure-ASCII dstHostJs
 const bootstrapJsPath = path.join(safeRuntimeDir, 'bootstrap.js');
 const bootstrapCode = `const fs = require('fs');
 const src = ${JSON.stringify(srcHostJs)};
@@ -163,7 +163,7 @@ try {
   if (fs.existsSync(src)) {
     const sStat = fs.statSync(src);
     const dStat = fs.existsSync(dst) ? fs.statSync(dst) : null;
-    if (!dStat || sStat.mtimeMs > dStat.mtimeMs || sStat.size !== dStat.size) {
+    if (!dStat || sStat.mtimeMs > dStat.mtimeMs + 500) {
       fs.copyFileSync(src, dst);
     }
   }

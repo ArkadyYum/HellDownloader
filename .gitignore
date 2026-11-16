@@ -9,6 +9,12 @@ native_host/com.vibecoding.videoclipper.json
 native_host/host_launcher.bat
 native_host/bin/*.exe
 DO NOT SHARE.txt
+PROJECT_NOTES.md
 .env*
 .DS_Store
 Thumbs.db
+docs/*.mp4
+docs/*.mp3
+docs/promo-project/
+docs/habr-before-after.png
+docs/photo_*.jpg

@@ -32,7 +32,7 @@
   <p>
     <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip"><b>Download Installer</b></a> &nbsp;·&nbsp;
     <a href="#-1-click-download--installation-takes-1-minute"><b>Installation Guide</b></a> &nbsp;·&nbsp;
-    <a href="#-whats-new-in-v111"><b>What's New (v1.1.1)</b></a> &nbsp;·&nbsp;
+    <a href="#-whats-new-in-v112"><b>What's New (v1.1.2)</b></a> &nbsp;·&nbsp;
     <a href="https://github.com/ArkadyYum/HellDownloader/discussions/1"><b>💬 Discussions & Feedback</b></a> &nbsp;·&nbsp;
     <a href="https://github.com/ArkadyYum/HellDownloader/issues"><b>Report Bug</b></a> &nbsp;·&nbsp;
     <a href="https://www.donationalerts.com/r/yumarkady"><b>Donate</b></a>
@@ -51,6 +51,10 @@
 
 ## ✨ Key Features
 
+<p align="center">
+  <img src="docs/promo-en.webp" alt="HellDownloader Demo — 4K Download, Timeline Fragment Cut, Shorts & Reels, Chapters & Duration Lock" width="100%" />
+</p>
+
 * **🎬 Full Video or ✂️ Frame-Accurate Fragment Cut:** Start (`S`) and End (`E`) handles mount directly onto the video player's native timeline scrub bar while you watch.
 * **Frame-by-Frame Precision (`1f` / `1s`):** Fine-tune clip boundaries, lock clip duration (`🔒`), and loop-preview your exact cut (`▶ Preview Clip`) before downloading.
 * **1-Click Chapter Selection:** Clicking any chapter segment on the video timeline automatically snaps the `S` and `E` markers to that chapter's start and end times and pre-fills the chapter title.
@@ -58,15 +62,16 @@
 * **Live Stream Recording:** Record clips directly from active live streams.
 * **Built-in DoH Bridge:** Works reliably even when your ISP's DNS is unstable or restricted.
 * **Works Across All Chromium Browsers:** Google Chrome, Microsoft Edge, Brave, Opera / Opera GX, Vivaldi, Yandex Browser.
-* **Configurable Auto-Updates:** Automatically checks for core & media engine updates in the background, with a 1-click **`Auto-update`** toggle right in the panel header if you prefer manual control.
+* **Configurable Auto-Updates:** Automatically checks for core & media engine updates in the background, with a 1-click **`Auto-update`** toggle in the `Advanced View` (`⚙️`) settings bar if you prefer manual control.
 
 ---
 
-## 🆕 What's New in v1.1.1
+## 🆕 What's New in v1.1.2
 
-* **Added `Auto-update` Toggle:** You can now enable or disable automatic GitHub updates directly from the top header bar (`✓ Auto-update`).
-* **Refined UI & Smooth Animations:** Unified typography and borders across the panel, added smooth accordion unfolding when switching to `Cut Fragment` mode, and redesigned action buttons (`Preview Clip`, `Report Bug`, `Donate`) in a cohesive solid style.
-* **Download Status & Quality Selection Fixes:** Fixed an issue where post-download cleanup could display a false `Operation cancelled` status, and preserved the user's selected resolution (`144p`–`4K` / `Audio Only`) while background format detection completes.
+* **Minimalist Compact HUD & `Advanced View`:** Clean 4-column quality grid (`144p`–`4K` + `MP3`) and one-click mode tabs by default; expandable `Advanced View` houses frame-step controls (`1f` / `1s`), duration lock (`🔒`), manual format refresh, and settings (`⚙️` shortcut & `Auto-update`).
+* **Active Video Highlight Border:** Soft green highlight frame around the active `<video>` in `Full Video` mode so you always see which video is targeted on multi-video feeds.
+* **TikTok, VK Clips & YouTube Shorts Upgrades:** Accurate timeline slider alignment on YouTube Shorts, TikTok, and letterboxed/pillarboxed players; full feed & multi-quality detection on TikTok (with direct CDN fallback); fixed VK Clips downloading the vertical clip itself rather than the linked full-length source video.
+* **Stronger Network Resilience:** Built-in DNS-over-HTTPS (DoH) local bridge and automatic HLS/multi-client fallback when ISP caches or DNS restrict media streams, plus cleaner diagnostic bug reports.
 
 ---
 
@@ -87,7 +92,7 @@
 2. **Open Chrome Extensions:** Click the **Three Dots `⋮`** in the top-right corner of your browser → **Extensions** → **Manage Extensions** (or open `chrome://extensions`).
 3. **Enable & Load:** Turn **ON** **Developer mode** (top-right), then click **Load unpacked** (top-left).
 4. **Select the `extension` folder:** In the folder window that opens, select the **`extension`** subfolder inside your unpacked folder (or simply press **`Ctrl+V`**) and click **Select Folder**.
-5. **Done!** Open any video in your browser and press **`Shift+F8`** on your keyboard (you can change the shortcut anytime in the panel header).
+5. **Done!** Open any video in your browser and press **`Shift+F8`** on your keyboard (you can change the shortcut anytime in **`Advanced View` (`⚙️`)**).
 
 ### 🗑️ How to Uninstall:
 * Double-click **`uninstall.bat`** — it removes the runtime files and cleans up the browser registry keys in 1 second.

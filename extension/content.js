@@ -18,7 +18,7 @@
 
   // Clean up any leftover DOM nodes from an earlier extension reload
   try {
-    document.querySelectorAll('#vc-clipper-panel, #vc-native-markers, #vc-drag-shield').forEach((el) => el.remove());
+    document.querySelectorAll('#vc-clipper-panel, #vc-native-markers, #vc-drag-shield, #vc-video-highlight').forEach((el) => el.remove());
   } catch (_) {}
 
   try {
@@ -60,7 +60,9 @@
       if (typeof data?.vcAutoUpdateV1 === 'boolean') {
         autoUpdateEnabled = data.vcAutoUpdateV1;
         updateAutoUpdateUI();
-        chrome.runtime.sendMessage({ type: 'SET_AUTOUPDATE', enabled: autoUpdateEnabled }).catch(() => {});
+        if (IS_TOP_WINDOW) {
+          chrome.runtime.sendMessage({ type: 'SET_AUTOUPDATE', enabled: autoUpdateEnabled }).catch(() => {});
+        }
       }
     } catch (_) {}
   })();
@@ -152,15 +154,96 @@
     return results;
   }
 
+  function isBlurredDecorativeVideo(v) {
+    if (!v) return false;
+    try {
+      let anc = v;
+      for (let i = 0; i < 5 && anc && anc !== document.body && anc !== document.documentElement; i++) {
+        const st = window.getComputedStyle(anc);
+        if (st.filter && st.filter.includes('blur(')) {
+          return true;
+        }
+        const ident = `${anc.className || ''} ${anc.id || ''}`.toLowerCase();
+        if (i < 4 && /(blur-bg|ambient|cinematics|glow-bg|divblurbackground)/i.test(ident) && (v.muted || st.pointerEvents === 'none')) {
+          return true;
+        }
+        anc = anc.parentElement;
+      }
+    } catch (_) {}
+    return false;
+  }
+
+  // Check if an element and all of its ancestors up to <body> are visibly rendered (catches opacity:0 on parent virtual swiper slides!)
+  function isElementVisiblyRendered(el) {
+    if (!el) return false;
+    try {
+      const ownSt = window.getComputedStyle(el);
+      if (ownSt.display === 'none' || ownSt.visibility === 'hidden' || Number(ownSt.opacity) < 0.05) {
+        return false;
+      }
+      let curr = el.parentElement || (el.getRootNode && el.getRootNode().host) || null;
+      for (let i = 0; i < 28 && curr && curr !== document.body && curr !== document.documentElement; i++) {
+        const st = window.getComputedStyle(curr);
+        if (st.display === 'none' || Number(st.opacity) < 0.05) {
+          return false;
+        }
+        const rn = curr.getRootNode ? curr.getRootNode() : null;
+        curr = curr.parentElement || (rn && rn.host ? rn.host : null);
+      }
+    } catch (_) {}
+    return true;
+  }
+
   function isLikelyAdOrPreviewVideo(v) {
     if (!v) return false;
-    if (v.closest?.('a[href]')) return true;
+    if (v.closest?.('a[href]')) {
+      const r = v.getBoundingClientRect();
+      if (r.width < 260 && r.height < 200 && v.muted) return true;
+    }
     if (v.closest?.('.ad-showing, .ad-interrupting')) return true;
+    if (v.closest?.('shreddit-ad-post, shreddit-dynamic-ad-link, [promoted], [data-promoted="true"]')) return true;
     if (v.closest?.('#inline-preview-player, ytd-video-preview, ytd-thumbnail-overlay-loading-preview-renderer, ytd-moving-thumbnail-renderer')) return true;
+    if (isBlurredDecorativeVideo(v)) return true;
     const src = v.currentSrc || v.src || '';
     if (src && isAdStreamUrl(src)) return true;
     const ident = `${v.className || ''} ${v.id || ''} ${v.parentElement?.className || ''}`.toLowerCase();
-    return /\b(ad-|ads-|preroll|midroll|ima-ad|vast|ya-video-ad|preview|thumb)\b/.test(ident);
+    return /\b(ad-|ads-|preroll|midroll|ima-ad|vast|ya-video-ad)\b/.test(ident);
+  }
+
+  // Count all non-blurred <video> elements (or multiple feed item cards) inside a container to detect single-slide boundaries
+  function countAllNonBlurredVideosIn(container) {
+    if (!container || !container.querySelectorAll) return 0;
+    const cards = container.querySelectorAll('article, [data-e2e="recommend-list-item-container"], ytd-reel-video-renderer, shreddit-post');
+    if (cards.length > 1) return cards.length;
+    const vids = container.querySelectorAll('video');
+    let count = 0;
+    for (const x of vids) {
+      if (isBlurredDecorativeVideo(x)) continue;
+      count++;
+      if (count > 1) return count;
+    }
+    return count;
+  }
+
+  // Count <video> elements inside a container that are currently visible inside the viewport (ignores off-screen or opacity:0 preloaded virtual swiper slides on TikTok/VK Clips/Shorts)
+  function countVisibleVideosIn(container) {
+    if (!container || !container.querySelectorAll) return 0;
+    const vids = container.querySelectorAll('video');
+    let count = 0;
+    for (const x of vids) {
+      if (isBlurredDecorativeVideo(x)) continue;
+      const r = x.getBoundingClientRect();
+      if (r.width < 100 || r.height < 65) continue;
+      const visTop = Math.max(0, r.top);
+      const visBottom = Math.min(window.innerHeight, r.bottom);
+      const visH = visBottom - visTop;
+      const cy = (r.top + r.bottom) / 2;
+      if (visH < Math.min(window.innerHeight, r.height) * 0.45 || cy < window.innerHeight * 0.08 || cy > window.innerHeight * 0.92) continue;
+      if (!isElementVisiblyRendered(x)) continue;
+      count++;
+      if (count > 1) return count;
+    }
+    return count;
   }
 
   // Climb up to the outer player container wrapping <video> and its control bar (supports Shadow DOM & display:contents)
@@ -192,24 +275,36 @@
         continue;
       }
 
-      // Never climb into a container that extends more than 52px below the video (post footers/titles/comments below video, e.g. Coub)
-      const extendsTooFarBelow = pRect.bottom > vRect.bottom + 52;
-      const sameHeightAsVideo =
-        !extendsTooFarBelow &&
-        pRect.height <= vRect.height * 1.2 + 56 &&
-        pRect.height >= vRect.height * 0.75;
-      const singleVideoInside = (parent.querySelectorAll?.('video')?.length || 1) <= 1;
+      const singleVideoInside = countAllNonBlurredVideosIn(parent) <= 1;
       // Never climb into a page layout wrapper that includes the site's navigation sidebar, top header, or chat/aside panel (e.g. TikTok left nav, Twitch right chat)
       const hasSiteNav = hasPageLevelNav(parent, vRect);
-      // Only allow climbing into a much wider pillarbox container (e.g. TikTok / OK.ru theater box) if an explicit player control/progress bar inside it actually spans wider than the video!
+
+      // Allow climbing into a taller vertical player card when a 16:9, 4:3, 1:1, or 3:4 video sits inside a 9:16 feed player card (e.g. TikTok / VK Clips / Shorts)
+      const isVerticallyCenteredInCard =
+        singleVideoInside &&
+        !hasSiteNav &&
+        pRect.height <= window.innerHeight + 60 &&
+        pRect.top >= -40 &&
+        pRect.bottom <= window.innerHeight + 60 &&
+        Math.abs((pRect.top + pRect.bottom) / 2 - (vRect.top + vRect.bottom) / 2) <= 220;
+
+      // Never climb into a container that extends more than 52px below the video (post footers/titles/comments below video, e.g. Coub), unless it's a single-video feed player card
+      const extendsTooFarBelow = !isVerticallyCenteredInCard && pRect.bottom > vRect.bottom + 52;
+      const sameHeightAsVideo =
+        isVerticallyCenteredInCard ||
+        (!extendsTooFarBelow &&
+          pRect.height <= vRect.height * 1.2 + 56 &&
+          pRect.height >= vRect.height * 0.75);
+
+      // Only allow climbing into a much wider pillarbox container (e.g. OK.ru / Vimeo / TikTok theater box) if an explicit player progress/timeline bar inside it actually spans wider than the video!
       let hasWiderControls = false;
       if (pRect.width > vRect.width + 40 && singleVideoInside && !hasSiteNav) {
         const wideCandidates = parent.querySelectorAll?.(
-          '[class*="progress" i], [class*="seek" i], [class*="timeline" i], [class*="time_bar" i], [class*="control" i], [data-e2e*="progress" i], [data-e2e*="control" i], [role="slider"]'
+          '[class*="progress" i], [class*="seek" i], [class*="timeline" i], [class*="time_bar" i], [data-e2e*="progress" i], [role="slider"]'
         ) || [];
         for (const wc of wideCandidates) {
           const wr = wc.getBoundingClientRect();
-          if (wr.width > vRect.width + 30 && wr.width <= pRect.width + 12 && wr.top >= vRect.top) {
+          if (wr.width > vRect.width + 30 && wr.width <= pRect.width + 12 && wr.top >= pRect.top && wr.height <= 48) {
             hasWiderControls = true;
             break;
           }
@@ -219,8 +314,8 @@
         singleVideoInside &&
         !hasSiteNav &&
         hasWiderControls &&
-        Math.abs((pRect.left + pRect.right) / 2 - (vRect.left + vRect.right) / 2) <= 35 &&
-        pRect.height <= vRect.height + 56;
+        Math.abs((pRect.left + pRect.right) / 2 - (vRect.left + vRect.right) / 2) <= 180 &&
+        (pRect.height <= vRect.height + 56 || isVerticallyCenteredInCard);
 
       if (
         hasSiteNav ||
@@ -244,13 +339,22 @@
     for (const nav of navs) {
       const nr = nav.getBoundingClientRect();
       if (nr.width === 0 || nr.height === 0) continue;
-      // An in-player header/sidedock stays inside the video's bounding box; a site header/sidebar/chat extends outside it
-      const isInsideVideoBounds =
-        nr.top >= vRect.top - 16 &&
-        nr.bottom <= vRect.bottom + 52 &&
-        nr.left >= vRect.left - 32 &&
-        nr.right <= vRect.right + 32;
-      if (!isInsideVideoBounds) {
+      // Only treat as a page-level navigation bar if it is a top site masthead, left page sidebar, or right page sidebar/chat column outside the video
+      const isTopSiteHeader =
+        nr.top <= 16 &&
+        nr.width >= window.innerWidth * 0.65 &&
+        nr.height <= 95 &&
+        nr.bottom <= vRect.top + 32;
+      const isLeftPageSidebar =
+        nr.left <= 24 &&
+        nr.right <= vRect.left + 20 &&
+        nr.height >= window.innerHeight * 0.4;
+      const isRightPageSidebar =
+        nr.right >= window.innerWidth - 24 &&
+        nr.left >= vRect.right - 20 &&
+        nr.height >= window.innerHeight * 0.4 &&
+        nr.width >= 180;
+      if (isTopSiteHeader || isLeftPageSidebar || isRightPageSidebar) {
         return true;
       }
     }
@@ -261,10 +365,19 @@
   function isNodeRelatedToPlayer(node, videoEl, playerRoot) {
     if (!node || !videoEl) return false;
     if (node === videoEl || node === playerRoot) return true;
-    if (node.id === 'vc-clipper-panel' || node.id === 'vc-native-markers' || node.id === 'vc-drag-shield') return true;
-    if (node.closest?.('#vc-clipper-panel, #vc-native-markers, #vc-drag-shield')) return true;
+    if (node.id === 'vc-clipper-panel' || node.id === 'vc-native-markers' || node.id === 'vc-drag-shield' || node.id === 'vc-video-highlight') return true;
+    if (node.closest?.('#vc-clipper-panel, #vc-native-markers, #vc-drag-shield, #vc-video-highlight')) return true;
     if (playerRoot && playerRoot.contains?.(node)) return true;
-    if (node.contains?.(videoEl)) return true;
+    if (node !== document.body && node !== document.documentElement && node.contains?.(videoEl) && countAllNonBlurredVideosIn(node) <= 1) return true;
+    // Check if node is a sibling player control/overlay inside the same single-video container (e.g. TikTok/Ranvik controls)
+    let p = videoEl.parentElement;
+    for (let d = 0; d < 14 && p && p !== document.body && p !== document.documentElement; d++) {
+      if (p.contains?.(node)) {
+        if (countAllNonBlurredVideosIn(p) <= 1 || !hasPageLevelNav(p, videoEl.getBoundingClientRect())) return true;
+        break;
+      }
+      p = p.parentElement;
+    }
     // Also check across Shadow DOM boundaries
     let curr = node;
     for (let i = 0; i < 10 && curr; i++) {
@@ -276,20 +389,60 @@
   }
 
   // Intersect video bounding rect with overflow-clipping ancestors AND detect opaque page sections covering the bottom of background videos (e.g. ivi.tv)
-  function getVisibleVideoRect(videoEl, playerRoot) {
+  function getVisibleVideoRect(videoEl, playerRoot, skipOcclusionCheck = false) {
     const raw = videoEl.getBoundingClientRect();
     let left = raw.left;
     let top = raw.top;
     let right = raw.right;
     let bottom = raw.bottom;
 
+    // 1. First, if <video> uses object-fit:contain inside a wider pillarbox or taller vertical letterbox,
+    // compute the intrinsic rendered video frame against the <video> element's own layout box (`raw`) BEFORE ancestor/scroll clipping!
+    if (
+      videoEl.videoWidth > 0 &&
+      videoEl.videoHeight > 0 &&
+      !videoEl.closest?.('.html5-video-player, #movie_player')
+    ) {
+      let objFit = '';
+      try {
+        objFit = (window.getComputedStyle(videoEl).objectFit || '').toLowerCase();
+      } catch (_) {}
+      if (objFit !== 'cover' && objFit !== 'fill') {
+        const boxW = raw.width;
+        const boxH = raw.height;
+        const vidAspect = videoEl.videoWidth / videoEl.videoHeight;
+        const renderedW = Math.round(boxH * vidAspect);
+        const renderedH = Math.round(boxW / vidAspect);
+        if (boxH >= 75 && renderedW >= 130 && boxW > renderedW * 1.2) {
+          const padX = Math.round((boxW - renderedW) / 2);
+          left = raw.left + padX;
+          right = left + renderedW;
+        } else if (boxW >= 130 && renderedH >= 70 && boxH > renderedH * 1.2) {
+          const padY = Math.round((boxH - renderedH) / 2);
+          top = raw.top + padY;
+          bottom = top + renderedH;
+        }
+      }
+    }
+
+    // 2. Intersect with overflow-clipping ancestors
     let curr = videoEl.parentElement;
     for (let i = 0; i < 12 && curr && curr !== document.body && curr !== document.documentElement; i++) {
       try {
         const st = window.getComputedStyle(curr);
-        if (/(hidden|clip)/.test(`${st.overflow} ${st.overflowX} ${st.overflowY}`)) {
+        if (/(hidden|clip|auto|scroll)/.test(`${st.overflow} ${st.overflowX} ${st.overflowY}`)) {
           const cr = curr.getBoundingClientRect();
-          if (cr.width > 0 && cr.height > 0) {
+          // Only clip against real positioned layout containers (>= 130x75) that actually overlap the video;
+          // in CSS, a position:static element with overflow:hidden does NOT clip position:absolute descendants!
+          if (
+            cr.width >= 130 &&
+            cr.height >= 75 &&
+            st.position !== 'static' &&
+            cr.bottom > raw.top + 30 &&
+            cr.top < raw.bottom - 30 &&
+            cr.right > raw.left + 30 &&
+            cr.left < raw.right - 30
+          ) {
             // Only clip horizontally if this ancestor does NOT contain a player timeline bar extending outside `cr` (e.g. Vimeo sets overflow:hidden on .css-mbocqp while .vp-progress spans the full theater bar!)
             let containsWiderTimeline = false;
             if (cr.width < (right - left) - 20) {
@@ -314,9 +467,17 @@
       curr = curr.parentElement || (rootNode && rootNode.host ? rootNode.host : null);
     }
 
-    // Visual occlusion check: if a page block (like "Сезоны" on ivi.tv) overlaps the bottom portion of a hero <video>
+    // 3. Visual occlusion check: if a page block (like "Сезоны" on ivi.tv) overlaps the bottom portion of a wide landscape hero <video>
     const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
-    if (!fsEl && bottom - top > 180 && right - left > 200) {
+    const isDedicatedVideoFeedSite = /(youtube\.com|tiktok\.com|vk\.com|vk\.ru|vkvideo\.ru|rutube\.ru|ok\.ru|vimeo\.com|twitch\.tv|reddit\.com|instagram\.com|x\.com|twitter\.com)$/i.test(
+      window.location.hostname
+    );
+    const isWideLandscapeHero =
+      !isDedicatedVideoFeedSite &&
+      (right - left) > window.innerWidth * 0.65 &&
+      (!videoEl.videoHeight || videoEl.videoWidth >= videoEl.videoHeight);
+    let wasOccludedBySection = false;
+    if (!skipOcclusionCheck && !fsEl && isWideLandscapeHero && bottom - top > 180 && right - left > 200) {
       const testX = Math.max(10, Math.min(window.innerWidth - 10, Math.round(left + (right - left) * 0.35)));
       let occludedBottom = bottom;
 
@@ -329,8 +490,8 @@
         }
         let blockedByPageSection = false;
         for (const hitEl of hitList) {
-          if (isNodeRelatedToPlayer(hitEl, videoEl, playerRoot)) {
-            // Reached the video or player control layer first -> not occluded at this Y!
+          if (hitEl === videoEl || hitEl.contains?.(videoEl) || isNodeRelatedToPlayer(hitEl, videoEl, playerRoot)) {
+            // Reached the video, its ancestor container, or player control layer first -> not occluded at this Y!
             break;
           }
           const st = window.getComputedStyle(hitEl);
@@ -361,8 +522,16 @@
 
       if (occludedBottom < bottom && occludedBottom > top + 120) {
         bottom = occludedBottom;
+        wasOccludedBySection = true;
       }
     }
+
+    // Clamp to visible browser viewport so partially scrolled-away videos in vertical feeds (TikTok, Shorts, VK Clips, Reddit)
+    // report only their actually visible on-screen area and never place overlays below the window
+    left = Math.max(0, left);
+    top = Math.max(0, top);
+    right = Math.min(window.innerWidth, right);
+    bottom = Math.min(window.innerHeight, bottom);
 
     return {
       left,
@@ -370,64 +539,159 @@
       right,
       bottom,
       width: Math.max(0, right - left),
-      height: Math.max(0, bottom - top)
+      height: Math.max(0, bottom - top),
+      _wasOccluded: wasOccludedBySection
     };
   }
 
   let cachedLocalVideo = null;
   let cachedLocalVideoAt = 0;
+  let lastUserInteractedVideo = null;
+  let lastUserInteractedAt = 0;
+
+  const markUserInteractedVideo = (e) => {
+    const path = typeof e?.composedPath === 'function' ? e.composedPath() : [];
+    const target = path[0] || e?.target;
+    if (!target || typeof target.closest !== 'function') return;
+    if (target.closest('#vc-clipper-panel, #vc-native-markers, #vc-drag-shield, #vc-video-highlight')) return;
+    let v = target.tagName === 'VIDEO' ? target : target.closest('video');
+    if (!v && path.length > 0) {
+      v = path.find((el) => el && el.tagName === 'VIDEO') || null;
+    }
+    if (!v) {
+      let anc = target;
+      for (let d = 0; d < 6 && anc && anc !== document.body; d++) {
+        const vids = queryAllDeep('video', anc).filter((x) => !isBlurredDecorativeVideo(x));
+        if (vids.length === 1) {
+          v = vids[0];
+          break;
+        }
+        if (vids.length > 1) break;
+        const rn = anc.getRootNode ? anc.getRootNode() : null;
+        anc = anc.parentElement || (rn && rn.host ? rn.host : null);
+      }
+    }
+    if (v && !isBlurredDecorativeVideo(v) && !isLikelyAdOrPreviewVideo(v)) {
+      if (lastUserInteractedVideo !== v) {
+        lastUserInteractedVideo = v;
+        cachedLocalVideo = null;
+      }
+      lastUserInteractedAt = Date.now();
+    }
+  };
+
+  document.addEventListener('pointerdown', (e) => markUserInteractedVideo(e), true);
+  // Invalidate cached video immediately when any <video> starts playing (e.g. scrolling to next video on TikTok/Shorts/VK Clips)
+  const onAnyVideoPlay = (e) => {
+    cachedLocalVideo = null;
+    const v = e?.target;
+    if (v && v.tagName === 'VIDEO' && !isBlurredDecorativeVideo(v) && !isLikelyAdOrPreviewVideo(v)) {
+      if (lastUserInteractedVideo && lastUserInteractedVideo !== v && lastUserInteractedVideo.paused) {
+        lastUserInteractedVideo = v;
+      }
+    }
+  };
+  document.addEventListener('play', onAnyVideoPlay, true);
+  document.addEventListener('playing', onAnyVideoPlay, true);
 
   function findLocalVideo() {
     const now = Date.now();
-    if (cachedLocalVideo && cachedLocalVideo.isConnected && now - cachedLocalVideoAt < 650) {
+    if (cachedLocalVideo && cachedLocalVideo.isConnected && now - cachedLocalVideoAt < 450) {
       const r = cachedLocalVideo.getBoundingClientRect();
-      if (r.width >= 200 && r.height >= 120 && r.bottom >= 40 && r.top <= window.innerHeight - 40) {
+      if (
+        !cachedLocalVideo.paused &&
+        isElementVisiblyRendered(cachedLocalVideo) &&
+        r.width >= 130 &&
+        r.height >= 70 &&
+        r.top >= -40 &&
+        r.bottom <= window.innerHeight + 40 &&
+        r.bottom >= 120 &&
+        r.top <= window.innerHeight - 120
+      ) {
         return cachedLocalVideo;
       }
     }
 
     const videos = queryAllDeep('video');
+    const anyPlayingInFeed = videos.some((x) => {
+      if (x.paused || x.ended || isBlurredDecorativeVideo(x) || isLikelyAdOrPreviewVideo(x) || !isElementVisiblyRendered(x)) return false;
+      const xr = x.getBoundingClientRect();
+      return xr.width >= 130 && xr.height >= 70 && xr.bottom >= 100 && xr.top <= window.innerHeight - 100;
+    });
+
     let best = null;
     let bestScore = 0;
     const vpCenterX = window.innerWidth / 2;
     const vpCenterY = window.innerHeight / 2;
 
     for (const v of videos) {
-      if (v.closest?.('a[href]')) continue;
-      // Never skip a <video> just because a parent has aria-hidden="true" if the video itself is visible in the viewport (e.g. Vimeo sets aria-hidden="true" on .vp-video-wrapper)
-      const ariaHiddenAnc = v.closest?.('[aria-hidden="true"]');
-      if (ariaHiddenAnc && (ariaHiddenAnc.getBoundingClientRect().width < 200 || ariaHiddenAnc.getBoundingClientRect().height < 120)) continue;
-
-      const style = window.getComputedStyle(v);
-      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) continue;
+      // Only skip small muted thumbnail <video> previews wrapped inside an <a> link; never skip feed players or wide videos
+      if (v.closest?.('a[href]')) {
+        const rawR = v.getBoundingClientRect();
+        if (rawR.width < 260 && rawR.height < 200 && v.muted) continue;
+      }
+      if (!isElementVisiblyRendered(v)) continue;
 
       const pRoot = getPlayerContainer(v);
       const rect = getVisibleVideoRect(v, pRoot);
       if (rect.bottom < 40 || rect.top > window.innerHeight - 40 || rect.right < 40 || rect.left > window.innerWidth - 40) continue;
-      if (rect.width < 200 || rect.height < 120) continue;
+      if (rect.width < 130 || rect.height < 70) continue;
 
-      let score = rect.width * rect.height;
+      const rawRect = v.getBoundingClientRect();
+      const expectedVisibleH = Math.min(window.innerHeight, Math.max(70, rect.height));
+      const mostlyInViewport =
+        rect.top >= 0 &&
+        rect.bottom <= window.innerHeight &&
+        (rawRect.bottom <= 0 || rawRect.top >= window.innerHeight
+          ? false
+          : (Math.min(window.innerHeight, rawRect.bottom) - Math.max(0, rawRect.top)) >= Math.min(window.innerHeight, Math.max(70, rawRect.height)) * 0.55);
+
+      // Use max(rect.height, rect.width * 0.65) for base area score so a wide 16:9 video in a vertical feed isn't penalized vs a 9:16 video
+      let score = rect.width * Math.max(rect.height, Math.round(rect.width * 0.65));
       const isAd = isLikelyAdOrPreviewVideo(v);
       if (isAd) {
-        score *= 0.05;
+        score *= 0.02;
       } else {
         score *= 2.5;
       }
       if (Number.isFinite(v.duration) && v.duration > 120) score *= 1.5;
 
-      // Strongly prefer the <video> that is currently playing or unmuted (essential on multi-video feeds like TikTok & Yandex Rhythms)
-      if (!v.paused && !v.ended) score *= 3.0;
-      if (!v.muted && v.volume > 0) score *= 1.8;
+      // Strongly prefer the <video> that is currently playing or unmuted (essential on multi-video feeds like TikTok, Shorts, VK Clips & Reddit)
+      const isPlayingNow = !v.paused && !v.ended;
+      if (isPlayingNow) score *= 12.0;
+      if (!v.muted && v.volume > 0) score *= 2.5;
 
-      // Check if this video (or its modal dialog) is visually on top at its center point (not behind a modal backdrop!)
+      // Strong preference for the video the user explicitly clicked, ONLY while it remains mostly in the viewport AND isn't paused while another video is playing
+      if (v === lastUserInteractedVideo && !isAd && mostlyInViewport && (!anyPlayingInFeed || isPlayingNow)) {
+        score *= 10.0;
+      }
+      // Sticky lock to current activeVideo so sliders never jump across multi-video thumbnail grids (e.g. ranvik.ru/video), ONLY while mostly in the viewport AND not superseded by a newly playing video
+      if (v === activeVideo && !isAd && mostlyInViewport && (!anyPlayingInFeed || isPlayingNow)) {
+        score *= 2.5;
+      }
+
+      // Check if this video is visually on top at its center point (not behind another <video> slide or a modal backdrop!)
       const cx = Math.max(10, Math.min(window.innerWidth - 10, Math.round(rect.left + rect.width / 2)));
       const cy = Math.max(10, Math.min(window.innerHeight - 10, Math.round(rect.top + rect.height / 2)));
       try {
         const hitList = document.elementsFromPoint(cx, cy) || [];
         let isTopVisible = false;
         for (const hitEl of hitList) {
-          if (hitEl.id === 'vc-clipper-panel' || hitEl.id === 'vc-native-markers' || hitEl.id === 'vc-drag-shield') continue;
-          if (hitEl.closest?.('#vc-clipper-panel, #vc-native-markers, #vc-drag-shield')) continue;
+          if (hitEl.id === 'vc-clipper-panel' || hitEl.id === 'vc-native-markers' || hitEl.id === 'vc-drag-shield' || hitEl.id === 'vc-video-highlight') continue;
+          if (hitEl.closest?.('#vc-clipper-panel, #vc-native-markers, #vc-drag-shield, #vc-video-highlight')) continue;
+          if (hitEl === v || hitEl.shadowRoot?.contains?.(v)) {
+            isTopVisible = true;
+            break;
+          }
+          if (hitEl.tagName === 'VIDEO' && hitEl !== v && !isBlurredDecorativeVideo(hitEl) && isElementVisiblyRendered(hitEl)) {
+            // Covered by another visibly rendered <video> element in front of it!
+            isTopVisible = false;
+            break;
+          }
+          if (hitEl.contains?.(v)) {
+            // An ancestor container's background is painted BEHIND `v`, never in front of `v`
+            continue;
+          }
           if (isNodeRelatedToPlayer(hitEl, v, pRoot)) {
             isTopVisible = true;
             break;
@@ -442,9 +706,9 @@
           }
         }
         if (isTopVisible) {
-          score *= 4.0;
+          score *= 4.5;
         } else {
-          score *= 0.15;
+          score *= 0.1;
         }
       } catch (_) {}
 
@@ -574,15 +838,16 @@
 
   function isDirectSingleFileVideoUrl(urlStr) {
     if (!urlStr || !/^https?:\/\//i.test(urlStr)) return false;
+    if (/tiktok\.com$/i.test(window.location.hostname)) return false;
     const lower = urlStr.toLowerCase();
     if (isAdStreamUrl(lower)) return false;
-    // Archive.org /details/ pages and Pikabu CDN videos have multiple quality derivatives
+    // Archive.org /details/ pages, Pikabu CDN videos, and TikTok streams have multiple quality tiers
     if (lower.includes('archive.org/')) return false;
+    if (lower.includes('/video/tos/') || lower.includes('mime_type=video_mp4') || lower.includes('tiktok')) return false;
     if (/cs\d*\.pikabu\.ru\/s\//i.test(lower) && /_(hslp|hlp|slp|sd|low)\.(mp4|webm)(\?|$)/i.test(lower)) return false;
     if (lower.includes(':hls:') || lower.includes('.m3u8') || lower.includes('.mpd')) return false;
     if (lower.includes('googlevideo.com/videoplayback')) return false;
     if (/[?&](bytestart|range)=/i.test(lower)) return false;
-    if (lower.includes('/video/tos/') || lower.includes('mime_type=video_mp4')) return true;
     return /\.(mp4|webm|mov|mkv)(\?|$)/i.test(lower);
   }
 
@@ -681,14 +946,24 @@
   // Compute the outer player bounding box (combines visible vertical bounds from vRect with full horizontal width of playerRoot for Theater Mode / pillarboxed videos)
   function getOuterPlayerRect(videoEl, playerRoot, vRect) {
     if (!playerRoot || playerRoot === videoEl) return vRect;
+    // Portrait/vertical 9:16 videos (TikTok, Shorts, VK Clips, Reels, Ranvik) or clamped intrinsic boxes must never expand horizontally into full-screen pillarboxes
+    if (
+      (videoEl.videoHeight > 0 && videoEl.videoWidth > 0 && videoEl.videoHeight > videoEl.videoWidth) ||
+      vRect.width < videoEl.getBoundingClientRect().width - 30
+    ) {
+      return vRect;
+    }
     const pr = playerRoot.getBoundingClientRect();
     if (pr.width < vRect.width * 0.9 || pr.height < vRect.height * 0.75) return vRect;
     const left = Math.max(0, Math.min(vRect.left, pr.left));
     const right = Math.min(window.innerWidth, Math.max(vRect.right, pr.right));
     const top = Math.max(0, Math.min(vRect.top, pr.top));
-      // Preserve vRect.bottom if getVisibleVideoRect clipped an occluded background video (like ivi.tv), otherwise allow at most 48px for player controls directly below video
-    const wasOccluded = vRect.bottom < videoEl.getBoundingClientRect().bottom - 15;
-    const bottom = wasOccluded ? vRect.bottom : Math.min(window.innerHeight, Math.max(vRect.bottom, Math.min(pr.bottom, vRect.bottom + 48)));
+    // Preserve vRect.bottom if getVisibleVideoRect clipped an occluded background video (like ivi.tv), otherwise allow player controls or single-video feed card bottom
+    const wasOccluded = Boolean(vRect._wasOccluded);
+    const maxBottomExtent = (pr.height <= window.innerHeight + 40 && countVisibleVideosIn(playerRoot) <= 1)
+      ? pr.bottom
+      : Math.min(pr.bottom, vRect.bottom + 48);
+    const bottom = wasOccluded ? vRect.bottom : Math.min(window.innerHeight, Math.max(vRect.bottom, maxBottomExtent));
     return {
       left,
       top,
@@ -756,15 +1031,19 @@
     return curr;
   }
 
-  function isValidFullTimelineRect(r, pRect) {
+  function isValidFullTimelineRect(r, pRect, vRect = null) {
+    const refRect = vRect || pRect;
     // Allow timeline bars down to 25% of player width (e.g. Alloha & Kodik where right-side controls take up to 58% of the bar)
-    if (!r || r.width < Math.max(120, pRect.width * 0.25) || r.width > pRect.width + 12) return false;
+    if (!r || r.width < Math.max(100, Math.min(pRect.width, refRect.width) * 0.25) || r.width > pRect.width + 12) return false;
     if (r.height < 1 || r.height > 36) return false;
-    // Timeline must start on the left side of the player (after at most Play button + timer), which also excludes right-side volume bars and middle chapter-title spacers
+    // Allow bars that either start near pRect.left / vRect.left OR are horizontally centered within pRect (e.g. TikTok theater mode)
     const maxLeftOffset = Math.min(165, pRect.width * 0.28);
-    if (r.left < pRect.left - 12 || r.left > pRect.left + maxLeftOffset) return false;
+    const startsNearLeft = (r.left >= pRect.left - 12 && r.left <= pRect.left + maxLeftOffset) ||
+      (vRect && r.left >= vRect.left - 16 && r.left <= vRect.left + Math.min(165, vRect.width * 0.28));
+    const isCenteredBar = r.width >= 130 && Math.abs((r.left + r.right) / 2 - (pRect.left + pRect.right) / 2) <= 75;
+    if (!startsNearLeft && !isCenteredBar) return false;
     const maxRightOffset = pRect.width * 0.68;
-    if (r.right > pRect.right + 12 || r.right < pRect.right - maxRightOffset) return false;
+    if (!isCenteredBar && (r.right > pRect.right + 12 || r.right < pRect.right - maxRightOffset)) return false;
     // Allow up to 155px (or 24% of player height) from bottom of player (e.g. Rutube embed on Yandex Video has timeline at 106px above bottom)
     const maxBottomDist = Math.max(155, pRect.height * 0.24);
     if (r.top < pRect.bottom - maxBottomDist || r.bottom > pRect.bottom + 8) return false;
@@ -779,8 +1058,38 @@
     if (!videoEl) return null;
     const playerRoot = getPlayerContainer(videoEl);
     const vRect = getVisibleVideoRect(videoEl, playerRoot);
-    if (vRect.width < 200 || vRect.height < 120) return null;
+    if (vRect.width < 130 || vRect.height < 70) return null;
     const pRect = getOuterPlayerRect(videoEl, playerRoot, vRect);
+
+    // Compute the outer player pane bounds (e.g. on TikTok where a 9:16 or 16:9 video sits inside a dark player pane whose progress bar is at the bottom of the pane)
+    // Note: In multi-slide feed columns (like tiktok.com/ru-RU/ after scrolling past slide 1), the outer feed column can be taller than window.innerHeight while its horizontal bounds (cr.left .. cr.right) define the theater pane width!
+    let outerPaneRect = pRect;
+    let paneCand = videoEl.parentElement;
+    for (let d = 0; d < 16 && paneCand && paneCand !== document.body && paneCand !== document.documentElement; d++) {
+      const cr = paneCand.getBoundingClientRect();
+      if (
+        cr.width >= vRect.width - 12 &&
+        cr.height >= vRect.height - 12 &&
+        cr.top <= vRect.top + 36 &&
+        cr.bottom >= vRect.bottom - 36 &&
+        !hasPageLevelNav(paneCand, vRect) &&
+        Math.abs((cr.left + cr.right) / 2 - (vRect.left + vRect.right) / 2) <= 165
+      ) {
+        const clampedLeft = Math.max(0, cr.left);
+        const clampedRight = Math.min(window.innerWidth, cr.right);
+        const clampedTop = cr.height <= window.innerHeight + 120 ? Math.max(0, cr.top) : Math.max(0, pRect.top);
+        const clampedBottom = cr.height <= window.innerHeight + 120 ? Math.min(window.innerHeight, cr.bottom) : Math.min(window.innerHeight, Math.max(pRect.bottom, window.innerHeight));
+        outerPaneRect = {
+          left: clampedLeft,
+          top: clampedTop,
+          right: clampedRight,
+          bottom: clampedBottom,
+          width: Math.max(0, clampedRight - clampedLeft),
+          height: Math.max(0, clampedBottom - clampedTop)
+        };
+      }
+      paneCand = paneCand.parentElement;
+    }
 
     const now = Date.now();
     if (
@@ -790,37 +1099,96 @@
       now - cachedTimelineAt < 850
     ) {
       const cr = cachedTimelineEl.getBoundingClientRect();
-      if (isValidFullTimelineRect(cr, pRect)) {
-        return { rect: cr, vRect, pRect, isExact: true, isExplicit: Boolean(cachedTimelineEl.dataset?.vcExplicit) };
+      const isExplicitCached = Boolean(cachedTimelineEl.dataset?.vcExplicit);
+      if (
+        cr.width >= 80 &&
+        cr.height >= 1 &&
+        cr.height <= 36 &&
+        (isExplicitCached || isValidFullTimelineRect(cr, pRect, vRect))
+      ) {
+        const refPRect = (cr.width > pRect.width + 24 || cr.top > pRect.bottom + 8) ? outerPaneRect : pRect;
+        return { rect: cr, vRect, pRect: refPRect, isExact: true, isExplicit: isExplicitCached };
       }
     }
 
-    // 1. YouTube Watch player progress bar
+    // 1. YouTube Shorts progress bar (MUST be checked BEFORE .html5-video-player because #shorts-player also has .html5-video-player!)
+    const isYtShortsPage =
+      window.location.hostname.includes('youtube.com') &&
+      window.location.pathname.startsWith('/shorts/');
+    const shortsHost =
+      videoEl.closest('ytd-reel-video-renderer, ytd-shorts, #shorts-player') ||
+      (isYtShortsPage ? videoEl.parentElement : null);
+    if (shortsHost) {
+      const reelRenderer = videoEl.closest('ytd-reel-video-renderer') || document.querySelector('ytd-reel-video-renderer[is-active]') || shortsHost;
+      const shortsBar = reelRenderer.querySelector(
+        'yt-progress-bar .ytPlayerProgressBarHost, yt-progress-bar [role="slider"], yt-progress-bar, .ytProgressBarLineProgressBarLine, #scrubber'
+      );
+      if (shortsBar) {
+        const sr = shortsBar.getBoundingClientRect();
+        if (sr.width > 80 && sr.top >= vRect.bottom - 36 && sr.bottom <= vRect.bottom + 14) {
+          return {
+            rect: {
+              left: sr.left,
+              width: sr.width,
+              top: sr.top,
+              height: Math.max(6, sr.height || 6),
+              bottom: sr.top + Math.max(6, sr.height || 6),
+              right: sr.left + sr.width
+            },
+            vRect,
+            pRect: vRect,
+            isExact: true,
+            isExplicit: true
+          };
+        }
+      }
+      // YouTube Shorts progress bar sits flush along the bottom edge of the Short video frame
+      return {
+        rect: {
+          left: vRect.left,
+          width: vRect.width,
+          top: vRect.bottom - 4,
+          height: 6,
+          bottom: vRect.bottom + 2,
+          right: vRect.right
+        },
+        vRect,
+        pRect: vRect,
+        isExact: true,
+        isExplicit: true
+      };
+    }
+
+    // 2. YouTube Watch & Embed player progress bar (works even when .ytp-autohide sets opacity: 0 on .ytp-chrome-bottom)
     const ytPlayer = videoEl.closest('.html5-video-player, #movie_player');
     if (ytPlayer) {
-      const ytBar = ytPlayer.querySelector('.ytp-progress-bar');
+      const ytBar = ytPlayer.querySelector('.ytp-progress-bar') || ytPlayer.querySelector('.ytp-progress-bar-container');
       if (ytBar) {
         const r = ytBar.getBoundingClientRect();
         const st = window.getComputedStyle(ytBar);
-        if (r.width > 80 && r.height > 0 && st.display !== 'none' && st.visibility !== 'hidden' && Number(st.opacity) > 0) {
+        if (r.width > 80 && st.display !== 'none') {
+          const safeRect = {
+            left: r.left,
+            width: r.width,
+            top: r.top > pRect.top + 40 ? r.top : (pRect.bottom - 47),
+            height: Math.max(6, r.height || 6),
+            bottom: (r.top > pRect.top + 40 ? r.top : (pRect.bottom - 47)) + Math.max(6, r.height || 6),
+            right: r.left + r.width
+          };
           ytBar.dataset.vcExplicit = '1';
           cachedTimelineEl = ytBar;
           cachedTimelineVideo = videoEl;
           cachedTimelineAt = now;
-          return { rect: r, vRect, pRect, isExact: true, isExplicit: true };
+          return { rect: safeRect, vRect, pRect, isExact: true, isExplicit: true };
         }
       }
-    }
-
-    // 2. YouTube Shorts progress bar
-    const shortsHost = videoEl.closest('ytd-reel-video-renderer, #shorts-player');
-    if (shortsHost) {
+      // Fallback for YouTube player before controls initialize
       return {
         rect: {
-          left: vRect.left + 8,
-          width: Math.max(80, vRect.width - 16),
-          top: vRect.bottom - 12,
-          height: 8
+          left: pRect.left + 12,
+          width: Math.max(80, pRect.width - 24),
+          top: pRect.bottom - 47,
+          height: 6
         },
         vRect,
         pRect,
@@ -829,19 +1197,27 @@
       };
     }
 
-    // 3. Search inside playerRoot (or its nearest single-video wrapper up to 4 levels if controls are sibling to playerRoot, e.g. Vimeo) for explicit & geometric timeline tracks
+    // 3. Search inside playerRoot (and if needed, outer feed player container for shared feed controls like tiktok.com/ru-RU/)
     if (playerRoot) {
       let searchRoot = playerRoot;
       let cand = playerRoot.parentElement;
-      for (let step = 0; step < 4 && cand && cand !== document.body && cand !== document.documentElement; step++) {
-        const cr = cand.getBoundingClientRect();
-        if (
-          (cand.querySelectorAll?.('video')?.length || 0) <= 1 &&
-          !hasPageLevelNav(cand, vRect) &&
-          cr.height <= vRect.height + 64
-        ) {
+      for (let step = 0; step < 10 && cand && cand !== document.body && cand !== document.documentElement; step++) {
+        if (countAllNonBlurredVideosIn(cand) <= 1 && !hasPageLevelNav(cand, vRect)) {
           searchRoot = cand;
           cand = cand.parentElement;
+        } else {
+          break;
+        }
+      }
+
+      // Also prepare outerSearchRoot for feed layouts (like tiktok.com/ru-RU/) where the bottom seekbar may be mounted on the slide <article> or the outer feed column
+      let outerSearchRoot = searchRoot;
+      let outerCand = searchRoot.parentElement;
+      for (let step = 0; step < 14 && outerCand && outerCand !== document.body && outerCand !== document.documentElement; step++) {
+        const ocr = outerCand.getBoundingClientRect();
+        if (ocr.width >= vRect.width - 12 && !hasPageLevelNav(outerCand, vRect)) {
+          outerSearchRoot = outerCand;
+          outerCand = outerCand.parentElement;
         } else {
           break;
         }
@@ -850,14 +1226,14 @@
       const explicitSelectors = [
         '.qsv-seekbar__qsv-progressBar',
         '.fp-timeline',
-        '.xgplayer-progress',
         '.vp-progress',
         '[class*="ProgressBar_module_progressBar"]',
+        '[data-e2e*="video-progress"]',
         '[class*="DivSeekBarContainer"]',
         '[class*="SeekBar"]',
         '[class*="ProgressBar"]',
-        '[data-e2e*="video-progress"]',
         '[data-e2e*="progress"]',
+        '.xgplayer-progress',
         '.vkvp_time_bar',
         '.videoplayer_timeline',
         '.videoplayer_timeline_wrap',
@@ -869,52 +1245,132 @@
         '[role="slider"]',
         'input[type="range"]'
       ];
-      let bestExplicitRect = null;
-      let bestExplicitEl = null;
-      let bestExplicitPenalty = 999;
-      for (const sel of explicitSelectors) {
-        const list = queryAllDeep(sel, searchRoot);
-        for (const rawEl of list) {
-          const rawRect = rawEl.getBoundingClientRect();
-          // Only climb if rawEl is a narrow thumb knob (< 40px); otherwise rawEl is already the explicit timeline track
-          const outerEl = rawRect.width < 40 ? climbToOuterTimelineTrack(rawEl, pRect, searchRoot) : rawEl;
-          if ((outerEl.querySelectorAll?.('button')?.length || 0) >= 2) continue;
-          if ((outerEl.querySelectorAll?.('svg')?.length || 0) >= 3) continue;
-          if (outerEl.querySelector?.('.fp-play, .fp-volume, .fp-elapsed, .fp-duration')) continue;
-          const r = outerEl.getBoundingClientRect();
-          // Allow explicit timeline bars whose center Y is within [pRect.bottom - 155 .. pRect.bottom + 8] and starting within 260px of pRect.left
-          const isValidExplicit =
-            r &&
-            r.width >= Math.max(120, pRect.width * 0.25) &&
-            r.width <= Math.max(pRect.width, vRect.width) + 24 &&
-            r.height >= 1 &&
-            r.height <= 36 &&
-            r.left >= Math.min(pRect.left, vRect.left) - 12 &&
-            r.left <= Math.max(pRect.left, vRect.left) + Math.min(260, Math.max(pRect.width, vRect.width) * 0.28) &&
-            r.top >= pRect.bottom - Math.max(155, pRect.height * 0.24) &&
-            r.bottom <= pRect.bottom + 12;
 
-          if (isValidExplicit) {
-            // Prefer the tighter inner track (height <= 14px) over padded outer hit-containers (height > 20px) when widths are within 30px
-            const heightPenalty = r.height > 16 ? 1 : 0;
-            if (
-              !bestExplicitRect ||
-              r.width > bestExplicitRect.width + 30 ||
-              (Math.abs(r.width - bestExplicitRect.width) <= 30 && heightPenalty < bestExplicitPenalty)
-            ) {
-              bestExplicitRect = r;
-              bestExplicitEl = outerEl;
-              bestExplicitPenalty = heightPenalty;
+      const isExplicitBarMountedForVideo = (el) => {
+        if (!el) return false;
+        try {
+          let curr = el;
+          for (let i = 0; i < 16 && curr && curr !== document.body && curr !== document.documentElement; i++) {
+            const st = window.getComputedStyle(curr);
+            // Note: Do NOT reject visibility === 'hidden' because xgplayer / custom players hide their control bar with visibility: hidden on mouse-idle while preserving exact bounding rect!
+            if (st.display === 'none') return false;
+            if (curr !== rootToScanGuard && !curr.contains(videoEl)) {
+              const isSlideItem =
+                curr.tagName === 'ARTICLE' ||
+                curr.getAttribute?.('data-e2e') === 'recommend-list-item-container' ||
+                curr.tagName === 'YTD-REEL-VIDEO-RENDERER' ||
+                curr.tagName === 'SHREDDIT-POST';
+              if (isSlideItem) return false;
+              if (curr.querySelector) {
+                const otherVid = curr.querySelector('video');
+                if (otherVid && otherVid !== videoEl) return false;
+              }
+            }
+            const rn = curr.getRootNode ? curr.getRootNode() : null;
+            curr = curr.parentElement || (rn && rn.host ? rn.host : null);
+          }
+        } catch (_) {}
+        return true;
+      };
+      let rootToScanGuard = null;
+
+      const evaluateExplicitInRoot = (rootToScan) => {
+        rootToScanGuard = rootToScan;
+        let bestExplicitRect = null;
+        let bestExplicitEl = null;
+        let bestExplicitScore = -999;
+
+        const maxAllowedBottom = Math.max(vRect.bottom, pRect.bottom, outerPaneRect.bottom);
+        const minAllowedTop = Math.min(vRect.bottom, pRect.bottom) - Math.max(155, pRect.height * 0.25);
+
+        for (const sel of explicitSelectors) {
+          const isXgProgress = sel === '.xgplayer-progress';
+          const list = queryAllDeep(sel, rootToScan);
+          for (const rawEl of list) {
+            if (!isExplicitBarMountedForVideo(rawEl)) continue;
+            const rawRect = rawEl.getBoundingClientRect();
+            const minTrackWidth = Math.min(pRect.width, vRect.width) * 0.72;
+            let outerEl = rawRect.width < minTrackWidth ? climbToOuterTimelineTrack(rawEl, outerPaneRect, rootToScan) : rawEl;
+
+            // If outerEl wraps both the seek bar and a right-hand timestamp (e.g. TikTok DivSeekBarContainer with "00:12/00:14"),
+            // prefer the child seek-bar track element so sliders don't overlap the timestamp text
+            const outerText = (outerEl.textContent || '').trim();
+            if (/\d{1,2}:\d{2}(?::\d{2})?\s*\/\s*\d{1,2}:\d{2}/.test(outerText) && outerEl.children?.length >= 2) {
+              const or = outerEl.getBoundingClientRect();
+              for (const ch of outerEl.children) {
+                const chr = ch.getBoundingClientRect();
+                if (
+                  !(ch.textContent || '').trim() &&
+                  chr.width >= or.width * 0.55 &&
+                  chr.width < or.width - 20 &&
+                  chr.height >= 1 &&
+                  chr.height <= 48
+                ) {
+                  outerEl = ch;
+                  break;
+                }
+              }
+            }
+
+            if ((outerEl.querySelectorAll?.('button')?.length || 0) >= 2) continue;
+            if ((outerEl.querySelectorAll?.('svg')?.length || 0) >= 3) continue;
+            if (outerEl.querySelector?.('.fp-play, .fp-volume, .fp-elapsed, .fp-duration')) continue;
+            const r = outerEl.getBoundingClientRect();
+            if (!r || r.width < Math.max(90, Math.min(pRect.width, vRect.width) * 0.25) || r.height < 1 || r.height > 48) continue;
+
+            const isCenteredWithVideo =
+              r.width >= 130 &&
+              ((Math.abs((r.left + r.right) / 2 - (vRect.left + vRect.right) / 2) <= 155 ||
+                Math.abs((r.left + r.right) / 2 - (outerPaneRect.left + outerPaneRect.right) / 2) <= 155) ||
+                (r.left <= vRect.left + 80 && r.right >= vRect.right - 80)) &&
+              r.left >= outerPaneRect.left - 45 &&
+              r.right <= outerPaneRect.right + 45;
+
+            const fitsInsideVideoBox =
+              r.width <= Math.max(pRect.width, vRect.width) + 28 &&
+              ((r.left >= Math.min(pRect.left, vRect.left) - 16 &&
+                r.left <= Math.max(pRect.left, vRect.left) + Math.min(260, Math.max(pRect.width, vRect.width) * 0.28)) ||
+                isCenteredWithVideo);
+
+            const isValidExplicit =
+              (fitsInsideVideoBox || isCenteredWithVideo) &&
+              r.top >= minAllowedTop &&
+              r.bottom <= maxAllowedBottom + 16;
+
+            if (isValidExplicit) {
+              let candScore = 100;
+              // Prefer tighter inner track (height <= 14px) over padded outer hit-container
+              if (r.height <= 14) candScore += 15;
+              // Prefer bars that sit slightly above the very bottom edge (e.g. 12..60px above bottom) over raw 0px bottom edge bars
+              const distFromBottom = maxAllowedBottom - (r.top + r.height / 2);
+              if (distFromBottom >= 10 && distFromBottom <= 65) candScore += 25;
+              if (isXgProgress && distFromBottom < 6) candScore -= 30;
+              candScore += Math.min(40, (r.width / Math.max(1, vRect.width)) * 20);
+
+              if (candScore > bestExplicitScore) {
+                bestExplicitScore = candScore;
+                bestExplicitRect = r;
+                bestExplicitEl = outerEl;
+              }
             }
           }
         }
+        return { bestExplicitRect, bestExplicitEl };
+      };
+
+      let { bestExplicitRect, bestExplicitEl } = evaluateExplicitInRoot(searchRoot);
+      if (!bestExplicitRect && outerSearchRoot !== searchRoot) {
+        ({ bestExplicitRect, bestExplicitEl } = evaluateExplicitInRoot(outerSearchRoot));
       }
       if (bestExplicitRect && bestExplicitEl) {
         bestExplicitEl.dataset.vcExplicit = '1';
         cachedTimelineEl = bestExplicitEl;
         cachedTimelineVideo = videoEl;
         cachedTimelineAt = now;
-        return { rect: bestExplicitRect, vRect, pRect, isExact: true, isExplicit: true };
+        const effectivePRect = (bestExplicitRect.width > pRect.width + 24 || bestExplicitRect.top > pRect.bottom + 8)
+          ? outerPaneRect
+          : pRect;
+        return { rect: bestExplicitRect, vRect, pRect: effectivePRect, isExact: true, isExplicit: true };
       }
 
       // 4. Universal Geometric Detector scoped inside searchRoot
@@ -928,7 +1384,7 @@
         const el = climbToOuterTimelineTrack(rawEl, pRect, searchRoot);
         const r = el.getBoundingClientRect();
 
-        if (!isValidFullTimelineRect(r, pRect)) continue;
+        if (!isValidFullTimelineRect(r, pRect, vRect)) continue;
         if (el.querySelector?.('video')) continue;
         if ((el.querySelectorAll?.('button')?.length || 0) >= 2) continue;
         if ((el.querySelectorAll?.('svg')?.length || 0) >= 3) continue;
@@ -993,16 +1449,20 @@
       }
     }
 
-    // 5. Static fallback right along the visible bottom edge of the video player
+    // 5. Static fallback right along the visible bottom edge of the rendered video frame (or outerPaneRect if lastExactBarRatio was locked to it)
+    const outerSizeKey = `${Math.round(outerPaneRect.width)}x${Math.round(outerPaneRect.height)}`;
+    const fbBox = (lastExactBarRatio && lastExactVideoSize === outerSizeKey)
+      ? outerPaneRect
+      : ((pRect.width > vRect.width + 40) ? vRect : pRect);
     return {
       rect: {
-        left: pRect.left + 14,
-        width: Math.max(80, pRect.width - 28),
-        top: pRect.bottom - 18,
+        left: fbBox.left + 12,
+        width: Math.max(70, fbBox.width - 24),
+        top: fbBox.bottom - 18,
         height: 8
       },
       vRect,
-      pRect,
+      pRect: fbBox,
       isExact: false
     };
   }
@@ -1045,8 +1505,10 @@
   let panelEl = null;
   let markersEl = null;
   let dragShieldEl = null;
+  let videoHighlightEl = null;
   let isOpen = false;
   let remoteOpen = false;
+  let isAdvancedView = false;
   let activeIframeId = null;
   let activeVideo = null;
   const remoteFramesMap = new Map();
@@ -1116,18 +1578,76 @@
     return document.getElementById(id);
   }
 
+  function findMatchingTopIframeRect(frameUrl) {
+    if (!IS_TOP_WINDOW || !frameUrl) return null;
+    try {
+      const iframes = queryAllDeep('iframe');
+      let ytId = '';
+      const m = frameUrl.match(/youtube(?:-nocookie)?\.com\/embed\/([A-Za-z0-9_-]{11})/i);
+      if (m && m[1]) ytId = m[1];
+      const baseFrameUrl = frameUrl.split('?')[0].split('#')[0];
+
+      for (const ifr of iframes) {
+        const src = ifr.src || ifr.getAttribute('src') || '';
+        const host = (ifr.getRootNode && ifr.getRootNode().host) ? ifr.getRootNode().host : null;
+        const hostHtml = host?.getAttribute?.('html') || '';
+        const matched =
+          (ytId && (src.includes(ytId) || hostHtml.includes(ytId))) ||
+          (src && (src === frameUrl || src.startsWith(baseFrameUrl)));
+        if (matched) {
+          const r = ifr.getBoundingClientRect();
+          if (r.width >= 100 && r.height >= 80) {
+            return r;
+          }
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
   function pickBestRemoteIframeState() {
     const now = Date.now();
     let best = null;
     let bestScore = -1;
+    const vpCenterY = window.innerHeight / 2;
+
     for (const [fId, st] of remoteFramesMap.entries()) {
       if (now - st.updatedAt > 2800) {
         remoteFramesMap.delete(fId);
         continue;
       }
-      const area = Number(st.videoArea) || 0;
+      if (typeof st.topViewportRatio === 'number' && st.topViewportRatio < 0.15) {
+        continue;
+      }
+      const topRect = findMatchingTopIframeRect(st.frameUrl);
+      if (topRect) {
+        if (topRect.bottom < 40 || topRect.top > window.innerHeight - 40 || topRect.width < 130 || topRect.height < 100) {
+          continue;
+        }
+        st.topRect = {
+          left: topRect.left,
+          top: topRect.top,
+          right: topRect.right,
+          bottom: topRect.bottom,
+          width: topRect.width,
+          height: topRect.height
+        };
+      } else {
+        st.topRect = null;
+      }
+
+      const area = topRect ? (topRect.width * topRect.height) : (Number(st.videoArea) || 0);
       const adMult = st.isAd || (st.videoSrc && isAdStreamUrl(st.videoSrc)) ? 0.01 : 1.0;
-      const score = area * adMult;
+      const playMult = st.playing ? 15.0 : 1.0;
+      const recentMult = (st.lastInteractedAt && now - st.lastInteractedAt < 30000) ? 6.0 : 1.0;
+      const visMult = typeof st.topViewportRatio === 'number' ? Math.max(0.2, st.topViewportRatio) : 1.0;
+      let centerMult = 1.0;
+      if (topRect) {
+        const cY = topRect.top + topRect.height / 2;
+        const normDist = Math.abs(cY - vpCenterY) / Math.max(1, window.innerHeight);
+        centerMult = Math.max(0.25, 1.35 - normDist);
+      }
+      const score = area * adMult * playMult * recentMult * visMult * centerMult;
       if (score > bestScore) {
         best = st;
         bestScore = score;
@@ -1142,10 +1662,23 @@
     const rem = pickBestRemoteIframeState();
     if (!rem) return false;
     if (!localVideoEl) return true;
+
+    const localPlaying = Boolean(!localVideoEl.paused && !localVideoEl.ended);
+    const remPlaying = Boolean(rem.playing);
+    if (localPlaying && !remPlaying) return false;
+    if (remPlaying && !localPlaying) return true;
+
+    const now = Date.now();
+    const localInteracted = (localVideoEl === lastUserInteractedVideo && now - lastUserInteractedAt < 60000) ? lastUserInteractedAt : 0;
+    const remInteracted = (rem.lastInteractedAt && now - rem.lastInteractedAt < 60000) ? rem.lastInteractedAt : 0;
+    if (localInteracted > remInteracted + 500) return false;
+    if (remInteracted > localInteracted + 500) return true;
+
     const pRoot = getPlayerContainer(localVideoEl);
     const lRect = getVisibleVideoRect(localVideoEl, pRoot);
     const localArea = lRect.width * lRect.height;
-    return (rem.videoArea || 0) >= localArea * 0.75;
+    const remArea = rem.topRect ? (rem.topRect.width * rem.topRect.height) : (rem.videoArea || 0);
+    return remArea >= localArea * 0.75;
   }
 
   // Safely seek <video> without ever hitting the very end (prevents triggering 'ended' event which closes video or autoplays next video!)
@@ -1215,15 +1748,46 @@
   });
 
   function promotePanelToTopLayer(el) {
-    if (!el || !el.isConnected) return;
+    if (!el || !el.isConnected) return false;
     try {
       if (el.getAttribute('popover') !== 'manual') {
         el.setAttribute('popover', 'manual');
       }
       if (typeof el.showPopover === 'function' && !el.matches(':popover-open')) {
         el.showPopover();
+        if (el !== panelEl && panelEl && isOpen && !panelEl.classList.contains('vc-hidden')) {
+          try {
+            if (typeof panelEl.hidePopover === 'function') panelEl.hidePopover();
+            if (typeof panelEl.showPopover === 'function') panelEl.showPopover();
+          } catch (_) {}
+        }
+        return true;
       }
     } catch (_) {}
+    return false;
+  }
+
+  function stripPopoverIfPresent(el) {
+    if (!el) return;
+    try {
+      if (el.hasAttribute('popover')) {
+        if (typeof el.hidePopover === 'function' && el.matches?.(':popover-open')) {
+          try { el.hidePopover(); } catch (_) {}
+        }
+        el.removeAttribute('popover');
+      }
+    } catch (_) {}
+  }
+
+  function setBoxBoundsImportant(el, left, top, width, height) {
+    if (!el) return;
+    el.style.setProperty('left', `${left}px`, 'important');
+    el.style.setProperty('top', `${top}px`, 'important');
+    el.style.setProperty('width', `${width}px`, 'important');
+    el.style.setProperty('height', `${height}px`, 'important');
+    el.style.setProperty('right', 'auto', 'important');
+    el.style.setProperty('bottom', 'auto', 'important');
+    el.style.setProperty('margin', '0', 'important');
   }
 
   function ensureMountedInOverlayRoot() {
@@ -1238,6 +1802,13 @@
     if (dragShieldEl && dragShieldEl.parentElement !== root) {
       root.appendChild(dragShieldEl);
     }
+    if (videoHighlightEl && videoHighlightEl.parentElement !== root) {
+      root.appendChild(videoHighlightEl);
+    }
+
+    stripPopoverIfPresent(videoHighlightEl);
+    stripPopoverIfPresent(markersEl);
+    stripPopoverIfPresent(dragShieldEl);
 
     // Keep #vc-clipper-panel in Chrome's #top-layer and above any newly opened modal/dialog (e.g. ya.ru Rhythms modal)
     if (panelEl && isOpen && !panelEl.classList.contains('vc-hidden')) {
@@ -1261,20 +1832,25 @@
   }
 
   function ensureMarkersOnly() {
-    if (markersEl && dragShieldEl) {
+    if (markersEl && dragShieldEl && videoHighlightEl) {
       ensureMountedInOverlayRoot();
       return;
     }
     const root = getActiveOverlayRoot();
     if (!root) return;
 
-    root.querySelectorAll('#vc-native-markers, #vc-drag-shield').forEach((el) => el.remove());
+    root.querySelectorAll('#vc-native-markers, #vc-drag-shield, #vc-video-highlight').forEach((el) => el.remove());
 
     dragShieldEl = document.createElement('div');
     dragShieldEl.id = 'vc-drag-shield';
     dragShieldEl.className = 'vc-hidden';
     root.appendChild(dragShieldEl);
     shieldElementEventsFromPage(dragShieldEl);
+
+    videoHighlightEl = document.createElement('div');
+    videoHighlightEl.id = 'vc-video-highlight';
+    videoHighlightEl.className = 'vc-hidden';
+    root.appendChild(videoHighlightEl);
 
     markersEl = document.createElement('div');
     markersEl.id = 'vc-native-markers';
@@ -1395,6 +1971,19 @@
   // ==========================================================================
   if (!IS_TOP_WINDOW) {
     let lastIdleTickAt = 0;
+    let myTopViewportRatio = 1.0;
+    try {
+      const io = new IntersectionObserver(
+        (entries) => {
+          for (const entry of entries) {
+            myTopViewportRatio = entry.intersectionRatio;
+          }
+        },
+        { root: null, threshold: [0, 0.05, 0.15, 0.3, 0.5, 0.75, 1.0] }
+      );
+      if (document.documentElement) io.observe(document.documentElement);
+    } catch (_) {}
+
     const iframeTimer = setInterval(() => {
       if (!isContextValid()) {
         clearInterval(iframeTimer);
@@ -1420,7 +2009,7 @@
         }).catch(() => {});
       }
 
-      if (v) {
+      if (v && myTopViewportRatio >= 0.1) {
         const pRoot = getPlayerContainer(v);
         const vRect = getVisibleVideoRect(v, pRoot);
         const dur = detectFallbackDurationFromDOM(v);
@@ -1449,19 +2038,25 @@
           duration: dur || 0,
           currentTime: Number.isFinite(v.currentTime) ? v.currentTime : 0,
           videoArea: Math.round(vRect.width * vRect.height),
+          playing: Boolean(!v.paused && !v.ended && v.readyState >= 2),
+          lastInteractedAt: lastUserInteractedAt || 0,
+          topViewportRatio: myTopViewportRatio,
+          ytQualities: getYouTubePlayerDomQualities(),
           isAd: isLikelyAdOrPreviewVideo(v)
         });
 
         const isAllowedFrame = (activeIframeId === null || myFrameId === -1 || activeIframeId === myFrameId);
-        if ((remoteOpen || isOpen) && mode === 'fragment' && isAllowedFrame) {
+        if ((remoteOpen || isOpen) && isAllowedFrame) {
           ensureMarkersOnly();
           mountMarkersOnProgressBar();
           syncSlidersUI();
-        } else if (markersEl) {
-          markersEl.classList.add('vc-hidden');
+        } else {
+          if (markersEl) markersEl.classList.add('vc-hidden');
+          if (videoHighlightEl) videoHighlightEl.classList.add('vc-hidden');
         }
-      } else if (markersEl) {
-        markersEl.classList.add('vc-hidden');
+      } else {
+        if (markersEl) markersEl.classList.add('vc-hidden');
+        if (videoHighlightEl) videoHighlightEl.classList.add('vc-hidden');
       }
     }, 220);
   }
@@ -1470,16 +2065,63 @@
     const href = IS_TOP_WINDOW ? window.location.href : (document.referrer || window.location.href);
     const v = activeVideo || findLocalVideo();
 
+    // 0. If top window is actively targeting a remote iframe (e.g. embedded YouTube video on Reddit), return its canonical video URL!
+    if (IS_TOP_WINDOW && shouldUseRemoteIframe(v) && remoteIframeState?.frameUrl) {
+      const fUrl = remoteIframeState.frameUrl;
+      const ytEmbed = fUrl.match(/youtube(?:-nocookie)?\.com\/embed\/([A-Za-z0-9_-]{11})/i);
+      if (ytEmbed && ytEmbed[1]) {
+        return `https://www.youtube.com/watch?v=${ytEmbed[1]}`;
+      }
+      if (/^https?:\/\//i.test(fUrl) && !/redditmedia\.com/i.test(fUrl)) {
+        return fUrl;
+      }
+    }
+
     // 1. Check if unclose_shadow.js (MAIN world) resolved a per-video permalink from React Fiber / xgplayer
     if (v?.dataset?.vcPermalink && /^https?:\/\//i.test(v.dataset.vcPermalink)) {
       return v.dataset.vcPermalink;
     }
 
-    // 2. Climb single-video DOM ancestors around active <video> to find post/reel/video permalink on feed sites
+    // 1.5. On VK / VK Video / YouTube, if the browser address bar already points to a canonical clip/video/watch URL,
+    // use it directly BEFORE scanning DOM links (because VK Clips embed a "Полное видео" /video-... link to the 50-minute source video inside the clip caption!)
+    try {
+      const u = new URL(href);
+      const zParam = u.searchParams.get('z');
+      if (zParam && /^(video|clip)-?\d+_\d+/i.test(zParam)) {
+        const match = zParam.match(/^((?:video|clip)-?\d+_\d+)/i);
+        if (match) {
+          return `${u.origin}/${match[1]}`;
+        }
+      }
+      if (/(?:^|\.)(?:vk\.com|vk\.ru|vkvideo\.ru)$/i.test(u.hostname)) {
+        const pathMatch = u.pathname.match(/^\/((?:video|clip)-?\d+_\d+)/i);
+        if (pathMatch && pathMatch[1]) {
+          return `${u.origin}/${pathMatch[1]}`;
+        }
+      }
+      if (u.hostname.includes('youtube.com') && u.pathname === '/watch' && u.searchParams.get('v')) {
+        return `https://www.youtube.com/watch?v=${u.searchParams.get('v')}`;
+      }
+      if (u.hostname.includes('youtube.com') && u.pathname.startsWith('/shorts/')) {
+        return `${u.origin}${u.pathname}`;
+      }
+    } catch (_) {}
+
+    // 2. Climb single-visible-video DOM ancestors (including across Shadow DOM boundaries) around active <video> to find post/reel/video permalink on feed sites
     if (v) {
-      let anc = v.parentElement;
-      for (let d = 0; d < 10 && anc && anc !== document.body; d++) {
-        if ((anc.querySelectorAll?.('video')?.length || 0) > 1) break;
+      const isPortraitOrClipContext =
+        /\/clips?(?:\/|$)/i.test(href) ||
+        (v.videoHeight > 0 && v.videoWidth > 0 && v.videoHeight > v.videoWidth);
+      let anc = v.parentElement || (v.getRootNode && v.getRootNode().host) || null;
+      for (let d = 0; d < 12 && anc && anc !== document.body; d++) {
+        if (anc.tagName === 'SHREDDIT-POST') {
+          const postPermalink = anc.getAttribute('permalink') || anc.getAttribute('content-href') || '';
+          if (postPermalink) {
+            if (/^https?:\/\//i.test(postPermalink)) return postPermalink;
+            if (postPermalink.startsWith('/')) return `https://www.reddit.com${postPermalink}`;
+          }
+        }
+        if (countAllNonBlurredVideosIn(anc) > 1) break;
         if (anc.id) {
           const m = anc.id.match(/xgwrapper-\d+-(\d{15,22})/);
           if (m && m[1]) {
@@ -1490,33 +2132,26 @@
         for (const a of links) {
           const rawHref = a.href || '';
           if (!/^https?:\/\//i.test(rawHref)) continue;
+          const isVkLink = /(?:vk\.com|vk\.ru|vkvideo\.ru)\/(?:video|clip)-?\d+_\d+/i.test(rawHref);
+          if (isVkLink && isPortraitOrClipContext && /\/video-?\d+_\d+/i.test(rawHref)) {
+            // Never pick a horizontal source "/video-..." link ("Полное видео") when viewing a vertical VK Clip!
+            continue;
+          }
           if (
             /tiktok\.com\/@[^/]+\/(?:video|photo)\/\d+/i.test(rawHref) ||
             /instagram\.com\/(?:[^/]+\/)?(?:reel|reels|p)\/[A-Za-z0-9_-]+/i.test(rawHref) ||
             /threads\.(?:net|com)\/(?:@[^/]+\/post|t)\/[A-Za-z0-9_-]+/i.test(rawHref) ||
             /(?:x|twitter)\.com\/[^/]+\/status\/\d+/i.test(rawHref) ||
-            /(?:vk\.com|vkvideo\.ru)\/(?:video|clip)-?\d+_\d+/i.test(rawHref)
+            isVkLink
           ) {
             return rawHref.split('?')[0];
           }
         }
-        anc = anc.parentElement;
+        const rn = anc.getRootNode ? anc.getRootNode() : null;
+        anc = anc.parentElement || (rn && rn.host ? rn.host : null);
       }
     }
 
-    try {
-      const u = new URL(href);
-      const zParam = u.searchParams.get('z');
-      if (zParam && /^(video|clip)-?\d+_\d+/.test(zParam)) {
-        const match = zParam.match(/^((?:video|clip)-?\d+_\d+)/);
-        if (match) {
-          return `${u.origin}/${match[1]}`;
-        }
-      }
-      if (u.hostname.includes('youtube.com') && u.pathname === '/watch' && u.searchParams.get('v')) {
-        return `https://www.youtube.com/watch?v=${u.searchParams.get('v')}`;
-      }
-    } catch (_) {}
     return href;
   }
 
@@ -2023,14 +2658,23 @@
 
   // Read available YouTube video qualities directly from #movie_player dataset (bridged from MAIN world in unclose_shadow.js)
   function getYouTubePlayerDomQualities() {
-    if (!window.location.hostname.includes('youtube.com')) return null;
+    if (IS_TOP_WINDOW && remoteIframeState && Array.isArray(remoteIframeState.ytQualities) && remoteIframeState.ytQualities.length > 0) {
+      const v = activeVideo || findLocalVideo();
+      if (shouldUseRemoteIframe(v)) {
+        return remoteIframeState.ytQualities;
+      }
+    }
+    if (!window.location.hostname.includes('youtube.com') && !window.location.hostname.includes('youtube-nocookie.com')) return null;
     try {
       const u = new URL(window.location.href);
       let expectedVideoId = u.searchParams.get('v') || '';
       if (!expectedVideoId && u.pathname.startsWith('/shorts/')) {
         expectedVideoId = u.pathname.split('/shorts/')[1]?.split('/')[0] || '';
       }
-      const player = document.getElementById('movie_player') || document.getElementById('shorts-player');
+      if (!expectedVideoId && u.pathname.startsWith('/embed/')) {
+        expectedVideoId = u.pathname.split('/embed/')[1]?.split('/')[0] || '';
+      }
+      const player = document.getElementById('movie_player') || document.getElementById('shorts-player') || document.querySelector('.html5-video-player');
       const raw = player?.dataset?.vcYtMeta;
       if (!raw) return null;
       const parsed = JSON.parse(raw);
@@ -2042,6 +2686,89 @@
       }
     } catch (_) {}
     return null;
+  }
+
+  // Read available TikTok video qualities bridged from MAIN world (unclose_shadow.js) + DOM quality menu
+  function getTikTokPlayerDomQualities(videoEl) {
+    if (!/tiktok\.com$/i.test(window.location.hostname)) return null;
+    const v = videoEl || activeVideo || findLocalVideo();
+    if (!v) return null;
+    const map = new Map();
+    const fallbackSrc = getDirectVideoSrc(v);
+
+    try {
+      const raw = v.dataset?.vcTikTokQualities;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          for (const q of parsed) {
+            const h = Number(q?.height) || 0;
+            if (h >= 240) {
+              map.set(h, {
+                height: h,
+                fps: Number(q.fps) || 30,
+                streamUrl: q.streamUrl || fallbackSrc || '',
+                hasExactStream: Boolean(q.hasExactStream)
+              });
+            }
+          }
+        }
+      }
+    } catch (_) {}
+
+    // Also check any visible or mounted TikTok quality menu items (540P, 720P, 1080P) inside the active player container
+    const pRoot = getPlayerContainer(v) || v.parentElement;
+    if (pRoot && pRoot.querySelectorAll) {
+      for (const el of pRoot.querySelectorAll('div, span, li, p')) {
+        if (el.children.length > 1) continue;
+        const txt = (el.textContent || '').trim();
+        const m = txt.match(/^(2160|1440|1080|720|540|480|360)\s*p$/i);
+        if (m) {
+          const h = Number(m[1]);
+          if (!map.has(h)) {
+            map.set(h, { height: h, fps: 30, streamUrl: fallbackSrc || '', hasExactStream: false });
+          }
+        }
+      }
+    }
+
+    const rawNative = getActiveNativeVideoHeight();
+    if (rawNative > 0) {
+      const TIERS = [360, 480, 540, 720, 1080, 1440, 2160];
+      let nativeH = rawNative;
+      for (const t of TIERS) {
+        if (Math.abs(rawNative - t) / t <= 0.08) {
+          nativeH = t;
+          break;
+        }
+      }
+      if (nativeH >= 360 && !map.has(nativeH)) {
+        map.set(nativeH, { height: nativeH, fps: 30, streamUrl: fallbackSrc || '', hasExactStream: Boolean(fallbackSrc) });
+      }
+      if (nativeH >= 1080 && map.size <= 1) {
+        for (const t of [720, 540]) {
+          if (!map.has(t)) map.set(t, { height: t, fps: 30, streamUrl: fallbackSrc || '', hasExactStream: false });
+        }
+      } else if (nativeH >= 720 && map.size <= 1) {
+        if (!map.has(540)) map.set(540, { height: 540, fps: 30, streamUrl: fallbackSrc || '', hasExactStream: false });
+      }
+    }
+
+    if (map.size === 0) return null;
+    return Array.from(map.values()).sort((a, b) => b.height - a.height);
+  }
+
+  function getVideoIdentityKey(v, useRemote) {
+    const pageUrl = getCleanVideoUrl();
+    const directSrc = (!useRemote && v) ? getDirectVideoSrc(v) : (remoteIframeState?.videoSrc || '');
+    let elVideoTagId = '';
+    if (!useRemote && v) {
+      if (!v.dataset.vcElId) {
+        v.dataset.vcElId = `v${Math.random().toString(36).slice(2, 8)}`;
+      }
+      elVideoTagId = `${v.dataset.vcElId}:${v.dataset.vcPermalink || ''}:${v.currentSrc || v.src || ''}`;
+    }
+    return `${pageUrl}|${directSrc}|${elVideoTagId}`;
   }
 
   function applyQualityObjectsList(rawQualities, cacheKey) {
@@ -2056,12 +2783,16 @@
       fps: Number(q.fps) || 30,
       audioOnly: false,
       container: q.height <= 1080 ? 'mp4' : 'mkv',
+      streamUrl: q.streamUrl || '',
+      hasExactStream: Boolean(q.hasExactStream),
       label: `${q.height}p${onlyOne ? ' (Original)' : (q.fps > 30 ? ` ${q.fps}fps` : '')}`
     }));
     availableQualities.push({
       height: 0,
       audioOnly: true,
       container: 'mp3',
+      streamUrl: rawQualities[0]?.streamUrl || '',
+      hasExactStream: true,
       label: '🎵 Audio Only'
     });
     if (cacheKey) {
@@ -2115,7 +2846,7 @@
     const useRemote = shouldUseRemoteIframe(v);
     const directSrc = (!useRemote && v) ? getDirectVideoSrc(v) : (remoteIframeState?.videoSrc || '');
     const pageUrl = getCleanVideoUrl();
-    const cacheKey = `${pageUrl}|${directSrc}`;
+    const cacheKey = getVideoIdentityKey(v, useRemote);
 
     // Instant 0ms path for Pikabu multi-quality videos (HD / SD / Low)
     const pkbInfo = (!useRemote && v) ? getPikabuVideoInfo(v) : null;
@@ -2171,10 +2902,16 @@
       return;
     }
 
-    // Instant 0ms YouTube player quality extraction (works even under zapret / DPI bypass before yt-dlp finishes)
+    // Instant 0ms YouTube & TikTok player quality extraction (works even under zapret / DPI bypass / TikTok IP blocks)
     const ytDomQuals = getYouTubePlayerDomQualities();
+    const ttDomQuals = (!useRemote && v) ? getTikTokPlayerDomQualities(v) : null;
     if (ytDomQuals && ytDomQuals.length > 0) {
       applyQualityObjectsList(ytDomQuals, null);
+    } else if (ttDomQuals && ttDomQuals.length > 0) {
+      applyQualityObjectsList(ttDomQuals, cacheKey);
+      if (fetchBtn) fetchBtn.textContent = '✅ Qualities detected';
+      lastAutoFormatsKey = cacheKey;
+      if (!forceRefresh) return;
     }
 
     if (isFetchingFormats && lastAutoFormatsKey === cacheKey && !forceRefresh) return;
@@ -2182,7 +2919,7 @@
     lastAutoFormatsKey = cacheKey;
 
     if (fetchBtn) {
-      fetchBtn.textContent = ytDomQuals ? '✅ Qualities detected' : '⏳ Detecting qualities...';
+      fetchBtn.textContent = (ytDomQuals || ttDomQuals) ? '✅ Qualities detected' : '⏳ Detecting qualities...';
       fetchBtn.disabled = true;
     }
 
@@ -2219,17 +2956,22 @@
             }
           }
         }
-        // Merge yt-dlp qualities with YouTube DOM qualities so no tier (<480p or >1080p) is ever missing under zapret
+        // Merge yt-dlp qualities with YouTube / TikTok DOM qualities so no tier is ever missing
         const mergedMap = new Map();
         for (const q of res.qualities) {
-          if (q.height >= 144) mergedMap.set(q.height, { height: q.height, fps: Number(q.fps) || 30 });
+          if (q.height >= 144) mergedMap.set(q.height, { height: q.height, fps: Number(q.fps) || 30, streamUrl: q.streamUrl || '', hasExactStream: Boolean(q.hasExactStream) });
         }
-        const latestYtDom = getYouTubePlayerDomQualities();
-        if (latestYtDom) {
-          for (const q of latestYtDom) {
+        const latestDom = getYouTubePlayerDomQualities() || ((!useRemote && v) ? getTikTokPlayerDomQualities(v) : null);
+        if (latestDom) {
+          for (const q of latestDom) {
             const prev = mergedMap.get(q.height);
-            if (!prev || (Number(q.fps) || 30) > prev.fps) {
-              mergedMap.set(q.height, { height: q.height, fps: Number(q.fps) || 30 });
+            if (!prev || (Number(q.fps) || 30) > prev.fps || (!prev.streamUrl && q.streamUrl)) {
+              mergedMap.set(q.height, {
+                height: q.height,
+                fps: Math.max(prev?.fps || 30, Number(q.fps) || 30),
+                streamUrl: q.streamUrl || prev?.streamUrl || '',
+                hasExactStream: Boolean(q.hasExactStream || prev?.hasExactStream)
+              });
             }
           }
         }
@@ -2237,16 +2979,24 @@
         applyQualityObjectsList(mergedList, cacheKey);
         if (fetchBtn) fetchBtn.textContent = '✅ Qualities detected';
       } else {
-        const fallbackYtDom = getYouTubePlayerDomQualities();
-        if (fallbackYtDom && fallbackYtDom.length > 0) {
-          applyQualityObjectsList(fallbackYtDom, cacheKey);
+        const fallbackDom = getYouTubePlayerDomQualities() || ((!useRemote && v) ? getTikTokPlayerDomQualities(v) : null);
+        if (fallbackDom && fallbackDom.length > 0) {
+          applyQualityObjectsList(fallbackDom, cacheKey);
           if (fetchBtn) fetchBtn.textContent = '✅ Qualities detected';
-        } else if (fetchBtn) {
-          fetchBtn.textContent = '🔄 Refresh Qualities';
+        } else {
+          if (fetchBtn) fetchBtn.textContent = '🔄 Refresh Qualities';
+          if (forceRefresh) {
+            lastDownloadError = res?.error || 'Could not detect video qualities on this page';
+            byId('vc-post-download-wrap')?.classList.remove('vc-hidden');
+          }
         }
       }
-    } catch (_) {
+    } catch (err) {
       if (fetchBtn) fetchBtn.textContent = '🔄 Refresh Qualities';
+      if (forceRefresh) {
+        lastDownloadError = err?.message || 'Error refreshing qualities';
+        byId('vc-post-download-wrap')?.classList.remove('vc-hidden');
+      }
     } finally {
       isFetchingFormats = false;
       if (fetchBtn) {
@@ -2282,13 +3032,6 @@
           <span>HellDownloader</span>
         </div>
         <div class="vc-header-actions">
-          <div class="vc-hotkey-col">
-            <button type="button" class="vc-hotkey-btn" id="vc-hotkey-btn" title="Click to assign a custom shortcut key"></button>
-            <button type="button" class="vc-autoupdate-btn vc-au-on" id="vc-autoupdate-btn" title="Toggle automatic updates from GitHub">
-              <span class="vc-au-box" id="vc-au-box">✓</span>
-              <span class="vc-au-label">Auto-update</span>
-            </button>
-          </div>
           <button type="button" class="vc-close-btn" id="vc-close-btn" title="Close">
             <svg viewBox="0 0 12 12" fill="none" aria-hidden="true">
               <path d="M2 2L10 10M10 2L2 10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -2297,70 +3040,92 @@
         </div>
       </div>
       <div class="vc-body">
-        <div class="vc-video-title vc-no-video" id="vc-video-title">Видео не найдено</div>
-
         <div class="vc-mode-tabs">
           <button type="button" class="vc-mode-tab ${mode === 'full' ? 'vc-active' : ''}" data-mode="full">🎬 Full Video</button>
           <button type="button" class="vc-mode-tab ${mode === 'fragment' ? 'vc-active' : ''}" data-mode="fragment">✂️ Cut Fragment</button>
         </div>
 
-        <div class="vc-fragment-box ${mode === 'fragment' ? 'vc-expanded' : ''}" id="vc-fragment-box">
-          <div class="vc-frag-summary ${mode === 'full' ? 'vc-full-mode' : ''}" id="vc-frag-summary">
-            <span class="vc-duration-text ${mode === 'fragment' ? 'vc-hidden' : ''}" id="vc-frag-duration">Duration: 00:30:00</span>
-            <div class="vc-duration-edit-wrap ${mode !== 'fragment' ? 'vc-hidden' : ''}" id="vc-duration-edit-wrap">
-              <span class="vc-duration-label">Duration:</span>
-              <input type="text" class="vc-time-input vc-duration-input" id="vc-input-duration" value="00:30:00" title="Enter fragment duration" />
-              <button type="button" class="vc-mini-btn vc-lock-btn ${isDurationLocked ? 'vc-locked' : ''}" id="vc-lock-duration-btn" title="Lock fragment duration (moving one slider moves both)">${isDurationLocked ? '🔒' : '🔓'}</button>
-            </div>
-            <button type="button" class="vc-preview-btn ${mode !== 'fragment' ? 'vc-hidden' : ''}" id="vc-preview-btn">▶ Preview Clip</button>
-          </div>
+        <div class="vc-advanced-top ${isAdvancedView ? '' : 'vc-hidden'}" id="vc-advanced-top">
+          <div class="vc-video-title vc-no-video" id="vc-video-title">Видео не найдено</div>
 
-          <div class="vc-time-collapse ${mode === 'fragment' ? 'vc-open' : ''}" id="vc-time-collapse">
-            <div class="vc-time-rows-wrap" id="vc-time-rows-wrap">
-              <div class="vc-time-row">
-                <span class="vc-time-label"><span class="vc-dot-green"></span>Start</span>
-                <input type="text" class="vc-time-input" id="vc-input-start" value="00:00:00" />
-                <div class="vc-step-group">
-                  <button type="button" class="vc-mini-btn" data-step="start:-1s" title="Step back 1 second">◀ 1s</button>
-                  <button type="button" class="vc-mini-btn" data-step="start:-1f" title="Step back 1 frame">◀ 1f</button>
-                  <button type="button" class="vc-mini-btn" data-step="start:+1f" title="Step forward 1 frame">1f ▶</button>
-                  <button type="button" class="vc-mini-btn" data-step="start:+1s" title="Step forward 1 second">1s ▶</button>
-                  <button type="button" class="vc-mini-btn vc-pin-btn" id="vc-set-start-now" title="Set Start to current player frame">📍</button>
+          <div class="vc-fragment-box ${mode === 'fragment' ? 'vc-expanded' : ''}" id="vc-fragment-box">
+            <div class="vc-frag-summary ${mode === 'full' ? 'vc-full-mode' : ''}" id="vc-frag-summary">
+              <span class="vc-duration-text ${mode === 'fragment' ? 'vc-hidden' : ''}" id="vc-frag-duration">Duration: 00:30:00</span>
+              <div class="vc-duration-edit-wrap ${mode !== 'fragment' ? 'vc-hidden' : ''}" id="vc-duration-edit-wrap">
+                <span class="vc-duration-label">Duration:</span>
+                <input type="text" class="vc-time-input vc-duration-input" id="vc-input-duration" value="00:30:00" title="Enter fragment duration" />
+                <button type="button" class="vc-mini-btn vc-lock-btn ${isDurationLocked ? 'vc-locked' : ''}" id="vc-lock-duration-btn" title="Lock fragment duration (moving one slider moves both)">${isDurationLocked ? '🔒' : '🔓'}</button>
+              </div>
+              <button type="button" class="vc-preview-btn ${mode !== 'fragment' ? 'vc-hidden' : ''}" id="vc-preview-btn">▶ Preview Clip</button>
+            </div>
+
+            <div class="vc-time-collapse ${mode === 'fragment' ? 'vc-open' : ''}" id="vc-time-collapse">
+              <div class="vc-time-rows-wrap" id="vc-time-rows-wrap">
+                <div class="vc-time-row">
+                  <span class="vc-time-label"><span class="vc-dot-green"></span>Start</span>
+                  <input type="text" class="vc-time-input" id="vc-input-start" value="00:00:00" />
+                  <div class="vc-step-group">
+                    <button type="button" class="vc-mini-btn" data-step="start:-1s" title="Step back 1 second">◀ 1s</button>
+                    <button type="button" class="vc-mini-btn" data-step="start:-1f" title="Step back 1 frame">◀ 1f</button>
+                    <button type="button" class="vc-mini-btn" data-step="start:+1f" title="Step forward 1 frame">1f ▶</button>
+                    <button type="button" class="vc-mini-btn" data-step="start:+1s" title="Step forward 1 second">1s ▶</button>
+                    <button type="button" class="vc-mini-btn vc-pin-btn" id="vc-set-start-now" title="Set Start to current player frame">📍</button>
+                  </div>
+                </div>
+
+                <div class="vc-time-row">
+                  <span class="vc-time-label"><span class="vc-dot-red"></span>End</span>
+                  <input type="text" class="vc-time-input" id="vc-input-end" value="00:30:00" />
+                  <div class="vc-step-group">
+                    <button type="button" class="vc-mini-btn" data-step="end:-1s" title="Step back 1 second">◀ 1s</button>
+                    <button type="button" class="vc-mini-btn" data-step="end:-1f" title="Step back 1 frame">◀ 1f</button>
+                    <button type="button" class="vc-mini-btn" data-step="end:+1f" title="Step forward 1 frame">1f ▶</button>
+                    <button type="button" class="vc-mini-btn" data-step="end:+1s" title="Step forward 1 second">1s ▶</button>
+                    <button type="button" class="vc-mini-btn vc-pin-btn" id="vc-set-end-now" title="Set End to current player frame">📍</button>
+                  </div>
                 </div>
               </div>
-
-              <div class="vc-time-row">
-                <span class="vc-time-label"><span class="vc-dot-red"></span>End</span>
-                <input type="text" class="vc-time-input" id="vc-input-end" value="00:30:00" />
-                <div class="vc-step-group">
-                  <button type="button" class="vc-mini-btn" data-step="end:-1s" title="Step back 1 second">◀ 1s</button>
-                  <button type="button" class="vc-mini-btn" data-step="end:-1f" title="Step back 1 frame">◀ 1f</button>
-                  <button type="button" class="vc-mini-btn" data-step="end:+1f" title="Step forward 1 frame">1f ▶</button>
-                  <button type="button" class="vc-mini-btn" data-step="end:+1s" title="Step forward 1 second">1s ▶</button>
-                  <button type="button" class="vc-mini-btn vc-pin-btn" id="vc-set-end-now" title="Set End to current player frame">📍</button>
-                </div>
-              </div>
             </div>
           </div>
-        </div>
 
-        <div class="vc-section-header">
-          <span>Available Qualities</span>
-          <button type="button" class="vc-refresh-formats-btn" id="vc-fetch-formats-btn">🔄 Refresh Qualities</button>
+          <div class="vc-section-header" id="vc-section-header">
+            <span>Available Qualities</span>
+            <button type="button" class="vc-refresh-formats-btn" id="vc-fetch-formats-btn">🔄 Refresh Qualities</button>
+          </div>
         </div>
 
         <div class="vc-quality-grid" id="vc-quality-grid"></div>
 
-        <button type="button" class="vc-download-btn" id="vc-download-btn">Download</button>
+        <button type="button" class="vc-download-btn" id="vc-download-btn">⬇ Download (1080 MP4)</button>
 
         <div class="vc-progress-box vc-hidden" id="vc-progress-box">
           <div class="vc-progress-bar-bg">
             <div class="vc-progress-bar-fill" id="vc-progress-fill"></div>
           </div>
-          <div class="vc-progress-status" id="vc-progress-status">Preparing...</div>
-          <div class="vc-progress-actions">
-            <button type="button" class="vc-action-secondary vc-hidden" id="vc-reveal-btn">📂 Show in Folder</button>
+          <div class="vc-progress-status-row">
+            <div class="vc-progress-status" id="vc-progress-status">Preparing...</div>
+            <button type="button" class="vc-reveal-inline-btn vc-hidden" id="vc-reveal-btn">📂 Show in Folder</button>
+          </div>
+          <div class="vc-progress-actions vc-hidden" id="vc-progress-actions">
             <button type="button" class="vc-action-secondary vc-hidden" id="vc-cancel-btn">✖ Cancel</button>
+          </div>
+        </div>
+
+        <div class="vc-bottom-bar" id="vc-bottom-bar">
+          <button type="button" class="vc-advanced-toggle-btn ${isAdvancedView ? 'vc-open' : ''}" id="vc-advanced-toggle-btn" aria-expanded="${isAdvancedView ? 'true' : 'false'}">
+            <svg class="vc-adv-tri" viewBox="0 0 10 10" fill="currentColor" aria-hidden="true">
+              <path d="M2.5 1.5L8 5L2.5 8.5V1.5Z"/>
+            </svg>
+            <span>Advanced View</span>
+          </button>
+
+          <div class="vc-settings-bar ${isAdvancedView ? '' : 'vc-hidden'}" id="vc-settings-bar">
+            <span class="vc-settings-gear" aria-hidden="true" title="Settings">⚙️</span>
+            <button type="button" class="vc-hotkey-btn" id="vc-hotkey-btn" title="Click to assign a custom shortcut key"></button>
+            <button type="button" class="vc-autoupdate-btn vc-au-on" id="vc-autoupdate-btn" title="Toggle automatic updates from GitHub">
+              <span class="vc-au-box" id="vc-au-box">✓</span>
+              <span class="vc-au-label">Auto-update</span>
+            </button>
           </div>
         </div>
 
@@ -2393,6 +3158,7 @@
     updateHotkeyButtonText();
     updateAutoUpdateUI();
     renderQualities();
+    updateDownloadButtonLabel();
   }
 
   function updateAutoUpdateUI() {
@@ -2423,32 +3189,56 @@
     btn.classList.toggle('vc-recording', isRecordingHotkey);
   }
 
-  function renderQualities() {
+  let lastRenderedQualitiesSig = '';
+
+  function renderQualities(forceRender = false) {
     const grid = byId('vc-quality-grid');
     if (!grid) return;
+
+    const sig = JSON.stringify({
+      adv: isAdvancedView,
+      selH: selectedQuality?.height || 0,
+      selAud: Boolean(selectedQuality?.audioOnly),
+      list: availableQualities.map((q) => ({
+        h: q.height,
+        aud: Boolean(q.audioOnly),
+        c: q.container || '',
+        lbl: q.label || ''
+      }))
+    });
+    if (!forceRender && sig === lastRenderedQualitiesSig && grid.children.length > 0) {
+      return;
+    }
+    lastRenderedQualitiesSig = sig;
     grid.innerHTML = '';
 
     for (const q of availableQualities) {
-      const item = document.createElement('div');
+      const item = document.createElement('button');
+      item.type = 'button';
       const isSelected = (q.audioOnly && selectedQuality.audioOnly) ||
         (!q.audioOnly && !selectedQuality.audioOnly && q.height === selectedQuality.height);
-      item.className = `vc-quality-item${isSelected ? ' vc-selected' : ''}`;
+      const isAudio = Boolean(q.audioOnly);
+      item.className = `vc-quality-item${isAudio ? ' vc-q-audio' : ''}${isSelected ? ' vc-selected' : ''}`;
 
-      const badgeClass = q.container === 'mp4'
-        ? 'vc-badge-mp4'
-        : (q.container === 'mkv' ? 'vc-badge-mkv' : 'vc-badge-mp3');
+      const numLabel = isAudio
+        ? 'MP3'
+        : String(q.height);
+      item.title = q.label || numLabel;
 
-      item.innerHTML = `
-        <span class="vc-q-name">${q.label}</span>
-        <span class="vc-q-badge ${badgeClass}">${q.container}</span>
-      `;
+      if (isAdvancedView && !isAudio) {
+        const ext = (q.container || (q.height <= 1080 ? 'mp4' : 'mkv')).toLowerCase();
+        const badgeClass = ext === 'mp4' ? 'vc-badge-mp4' : 'vc-badge-mkv';
+        item.innerHTML = `<span class="vc-q-name">${numLabel}</span><span class="vc-q-badge ${badgeClass}">${ext}</span>`;
+      } else {
+        item.innerHTML = `<span class="vc-q-name">${numLabel}</span>`;
+      }
 
       item.addEventListener('click', () => {
         selectedQuality = q;
         if (q.fps >= 20) {
           activeVideoFps = Math.round(q.fps);
         }
-        renderQualities();
+        renderQualities(true);
         syncSlidersUI();
         updateDownloadButtonLabel();
       });
@@ -2460,7 +3250,13 @@
   function updateDownloadButtonLabel() {
     const btn = byId('vc-download-btn');
     if (!btn) return;
-    btn.textContent = 'Download';
+    if (selectedQuality?.audioOnly) {
+      btn.textContent = '⬇ Download (MP3)';
+    } else {
+      const h = selectedQuality?.height || 1080;
+      const ext = (selectedQuality?.container || (h <= 1080 ? 'mp4' : 'mkv')).toUpperCase();
+      btn.textContent = `⬇ Download (${h} ${ext})`;
+    }
   }
 
   function syncSlidersUI() {
@@ -2527,14 +3323,71 @@
   let lastExactBarRatio = null;
   let lastExactVideoSize = '';
 
-  function mountMarkersOnProgressBar() {
-    const shouldShow = (isOpen || remoteOpen) && mode === 'fragment';
-    if (!shouldShow || !markersEl) {
+  function mountMarkersOnProgressBar(fastScroll = false) {
+    if (!isOpen && !remoteOpen) {
       if (markersEl) markersEl.classList.add('vc-hidden');
+      if (videoHighlightEl) videoHighlightEl.classList.add('vc-hidden');
       return;
     }
 
-    ensureMountedInOverlayRoot();
+    if (!fastScroll) {
+      ensureMountedInOverlayRoot();
+    }
+
+    const v = (fastScroll && activeVideo && activeVideo.isConnected) ? activeVideo : findLocalVideo();
+    if (IS_TOP_WINDOW && shouldUseRemoteIframe(v)) {
+      activeVideo = null;
+      if (markersEl) markersEl.classList.add('vc-hidden');
+      if (mode === 'full' && videoHighlightEl && remoteIframeState?.topRect) {
+        const tr = findMatchingTopIframeRect(remoteIframeState.frameUrl) || remoteIframeState.topRect;
+        if (tr && tr.width >= 130 && tr.height >= 100 && tr.bottom >= 40 && tr.top <= window.innerHeight - 40) {
+          videoHighlightEl.classList.remove('vc-hidden');
+          stripPopoverIfPresent(videoHighlightEl);
+          setBoxBoundsImportant(videoHighlightEl, tr.left, tr.top, tr.width, tr.height);
+          return;
+        }
+      }
+      if (videoHighlightEl) videoHighlightEl.classList.add('vc-hidden');
+      return;
+    }
+
+    activeVideo = v;
+
+    if (mode === 'full') {
+      if (markersEl) markersEl.classList.add('vc-hidden');
+      if (v && videoHighlightEl) {
+        const pRoot = getPlayerContainer(v);
+        const vRect = getVisibleVideoRect(v, pRoot, fastScroll);
+        if (vRect.width >= 130 && vRect.height >= 70 && vRect.bottom >= 40 && vRect.top <= window.innerHeight - 40) {
+          videoHighlightEl.classList.remove('vc-hidden');
+          stripPopoverIfPresent(videoHighlightEl);
+          setBoxBoundsImportant(videoHighlightEl, vRect.left, vRect.top, vRect.width, vRect.height);
+
+          const actualHRect = videoHighlightEl.getBoundingClientRect();
+          if (actualHRect.width > 0 && Math.abs(actualHRect.width - vRect.width) > 2) {
+            const zoomScale = actualHRect.width / vRect.width;
+            if (zoomScale > 0.25 && zoomScale < 4 && Math.abs(zoomScale - 1) > 0.01) {
+              setBoxBoundsImportant(
+                videoHighlightEl,
+                vRect.left / zoomScale,
+                vRect.top / zoomScale,
+                vRect.width / zoomScale,
+                vRect.height / zoomScale
+              );
+            }
+          }
+        } else {
+          videoHighlightEl.classList.add('vc-hidden');
+        }
+      } else if (videoHighlightEl) {
+        videoHighlightEl.classList.add('vc-hidden');
+      }
+      return;
+    }
+
+    if (videoHighlightEl) videoHighlightEl.classList.add('vc-hidden');
+    if (!markersEl) return;
+
     markersEl.classList.add('vc-fallback-fixed');
 
     const ytSettingsPopup = document.querySelector('.ytp-settings-menu');
@@ -2543,19 +3396,9 @@
       return;
     }
 
-    const v = findLocalVideo();
-
-    if (IS_TOP_WINDOW && shouldUseRemoteIframe(v)) {
-      activeVideo = null;
-      markersEl.classList.add('vc-hidden');
-      return;
-    }
-
-    activeVideo = v;
-
     if (v) {
       const found = findLocalTimelineRect(v);
-      if (!found || found.vRect.bottom < 45 || found.vRect.top > window.innerHeight - 45 || found.vRect.width < 200) {
+      if (!found || found.vRect.bottom < 45 || found.vRect.top > window.innerHeight - 45 || found.vRect.width < 130) {
         markersEl.classList.add('vc-hidden');
         return;
       }
@@ -2566,12 +3409,11 @@
 
       let barMetrics;
       if (isExact && r && r.width > 60) {
-        const maxBottomDist = Math.max(155, pRect.height * 0.25);
         barMetrics = {
-          leftOffset: Math.max(0, r.left - pRect.left),
+          leftOffset: r.left - pRect.left,
           width: r.width,
-          bottomOffset: Math.max(6, Math.min(maxBottomDist, pRect.bottom - (r.top + r.height / 2))),
-          height: Math.max(6, Math.min(12, r.height))
+          bottomOffset: pRect.bottom - (r.top + r.height / 2),
+          height: Math.max(6, Math.min(12, r.height || 8))
         };
         // Remember exact timeline position so if player controls auto-hide on mouse idle, sliders stay at the exact same spot!
         if (!lastExactBarRatio || lastExactVideoSize !== sizeKey || found.isExplicit || barMetrics.width >= lastExactBarRatio.width - 4) {
@@ -2591,27 +3433,28 @@
         };
       }
 
-      const centerY = pRect.bottom - barMetrics.bottomOffset;
-      const targetLeft = pRect.left + barMetrics.leftOffset;
-      const targetWidth = Math.max(80, barMetrics.width);
+      const centerY = Math.min(window.innerHeight - 8, Math.max(8, pRect.bottom - barMetrics.bottomOffset));
+      const targetLeft = Math.max(4, pRect.left + barMetrics.leftOffset);
+      const targetWidth = Math.min(window.innerWidth - targetLeft - 4, Math.max(80, barMetrics.width));
       const targetTop = centerY - barMetrics.height / 2;
       const targetHeight = barMetrics.height;
 
       markersEl.classList.remove('vc-hidden');
-      markersEl.style.left = `${targetLeft}px`;
-      markersEl.style.width = `${targetWidth}px`;
-      markersEl.style.top = `${targetTop}px`;
-      markersEl.style.height = `${targetHeight}px`;
+      stripPopoverIfPresent(markersEl);
+      setBoxBoundsImportant(markersEl, targetLeft, targetTop, targetWidth, targetHeight);
 
       // Universal compensation for pages that apply CSS zoom on <html> or <body> (e.g. ivi.tv sets html { zoom: 1.25 } on 2K/4K screens)
       const actualRect = markersEl.getBoundingClientRect();
       if (actualRect.width > 0 && Math.abs(actualRect.width - targetWidth) > 1.5) {
         const zoomScale = actualRect.width / targetWidth;
         if (zoomScale > 0.25 && zoomScale < 4 && Math.abs(zoomScale - 1) > 0.01) {
-          markersEl.style.left = `${targetLeft / zoomScale}px`;
-          markersEl.style.width = `${targetWidth / zoomScale}px`;
-          markersEl.style.top = `${targetTop / zoomScale}px`;
-          markersEl.style.height = `${targetHeight / zoomScale}px`;
+          setBoxBoundsImportant(
+            markersEl,
+            targetLeft / zoomScale,
+            targetTop / zoomScale,
+            targetWidth / zoomScale,
+            targetHeight / zoomScale
+          );
         }
       }
 
@@ -2650,6 +3493,10 @@
     const v = findLocalVideo();
     const useRemote = shouldUseRemoteIframe(v);
     activeVideo = useRemote ? null : v;
+    const nextActiveIframeId = (useRemote && remoteIframeState) ? remoteIframeState.senderFrameId : 0;
+    if (IS_TOP_WINDOW && nextActiveIframeId !== activeIframeId) {
+      broadcastStateToFrames();
+    }
 
     const titleEl = byId('vc-video-title');
     if (titleEl) {
@@ -2681,9 +3528,7 @@
       detectedDur = detectFallbackDurationFromDOM(null);
     }
 
-    const currentPageUrl = getCleanVideoUrl();
-    const directSrc = (!useRemote && v) ? getDirectVideoSrc(v) : (remoteIframeState?.videoSrc || '');
-    const currentVideoIdentity = `${currentPageUrl}|${directSrc}`;
+    const currentVideoIdentity = getVideoIdentityKey(v, useRemote);
     const isNewVideo = (currentVideoIdentity !== lastVideoKey);
 
     if (detectedDur > 0 && !isAdNow) {
@@ -2696,17 +3541,9 @@
         if (activeChap && activeChap.endTime > activeChap.startTime) {
           startTime = activeChap.startTime;
           endTime = activeChap.endTime;
-        } else if (videoDuration <= 90) {
-          // For short-form videos (TikTok, Reels, Shorts, Threads <= 90s), default fragment range to the entire clip [0 .. duration]
-          startTime = 0;
-          endTime = videoDuration;
         } else {
-          startTime = Math.max(0, Math.min(curTime, videoDuration - 1));
-          endTime = Math.min(videoDuration, startTime + Math.min(60, videoDuration - startTime));
-          if (endTime <= startTime) {
-            startTime = 0;
-            endTime = videoDuration;
-          }
+          startTime = (curTime > 0 && curTime < videoDuration - 1) ? curTime : 0;
+          endTime = videoDuration;
         }
         broadcastStateToFrames();
       } else if (Math.abs(detectedDur - videoDuration) > 1) {
@@ -2721,6 +3558,14 @@
     // Automatically check available qualities whenever a new video is opened while the panel is visible
     if (isOpen && currentVideoIdentity !== lastAutoFormatsKey) {
       fetchFormatsForCurrentVideo(false);
+    } else if (isOpen && /tiktok\.com$/i.test(window.location.hostname) && !useRemote && v) {
+      const ttQuals = getTikTokPlayerDomQualities(v);
+      const currentVidQuals = availableQualities.filter((q) => !q.audioOnly);
+      const currentExactCount = currentVidQuals.filter((q) => q.hasExactStream && q.streamUrl).length;
+      const newExactCount = ttQuals ? ttQuals.filter((q) => q.hasExactStream && q.streamUrl).length : 0;
+      if (ttQuals && (ttQuals.length > currentVidQuals.length || newExactCount > currentExactCount)) {
+        applyQualityObjectsList(ttQuals, currentVideoIdentity);
+      }
     }
 
     ensureMountedInOverlayRoot();
@@ -2819,9 +3664,34 @@
     window.addEventListener('mouseup', stopPanelDrag, true);
     window.addEventListener('blur', stopPanelDrag);
 
+    byId('vc-advanced-toggle-btn')?.addEventListener('click', () => {
+      isAdvancedView = !isAdvancedView;
+      byId('vc-advanced-top')?.classList.toggle('vc-hidden', !isAdvancedView);
+      byId('vc-settings-bar')?.classList.toggle('vc-hidden', !isAdvancedView);
+      byId('vc-reveal-btn')?.classList.toggle('vc-hidden', !(isAdvancedView && lastDownloadId !== null && !isDownloading));
+      const advBtn = byId('vc-advanced-toggle-btn');
+      advBtn?.classList.toggle('vc-open', isAdvancedView);
+      advBtn?.setAttribute('aria-expanded', isAdvancedView ? 'true' : 'false');
+      renderQualities();
+      syncSlidersUI();
+    });
+
     panelEl.querySelectorAll('.vc-mode-tab').forEach((tab) => {
       tab.addEventListener('click', () => {
+        const prevMode = mode;
         mode = tab.dataset.mode;
+        if (mode === 'fragment' && prevMode !== 'fragment' && !userManuallyAdjustedSliders && videoDuration > 1) {
+          const cur = getCurrentPlayerTime();
+          const activeChap = findChapterAtTime(cur);
+          if (activeChap && activeChap.endTime > activeChap.startTime) {
+            startTime = activeChap.startTime;
+            endTime = activeChap.endTime;
+          } else {
+            startTime = (cur > 0 && cur < videoDuration - 0.5) ? cur : 0;
+            endTime = videoDuration;
+          }
+          lockedDuration = Math.max(0.1, endTime - startTime);
+        }
         panelEl.querySelectorAll('.vc-mode-tab').forEach((t) => t.classList.toggle('vc-active', t === tab));
         byId('vc-fragment-box')?.classList.toggle('vc-expanded', mode === 'fragment');
         byId('vc-time-collapse')?.classList.toggle('vc-open', mode === 'fragment');
@@ -2974,12 +3844,14 @@
       const progStatus = byId('vc-progress-status');
       const revealBtn = byId('vc-reveal-btn');
       const cancelBtn = byId('vc-cancel-btn');
+      const progActions = byId('vc-progress-actions');
 
       if (dlBtn) dlBtn.disabled = true;
       lastDownloadError = '';
       progBox?.classList.remove('vc-hidden');
       revealBtn?.classList.add('vc-hidden');
       cancelBtn?.classList.remove('vc-hidden');
+      progActions?.classList.remove('vc-hidden');
       byId('vc-post-download-wrap')?.classList.add('vc-hidden');
       byId('vc-bug-drawer')?.classList.add('vc-hidden');
       byId('vc-report-bug-btn')?.classList.remove('vc-active');
@@ -2991,6 +3863,8 @@
           type: 'START_DOWNLOAD',
           url: getCleanVideoUrl(),
           videoSrc: selectedQuality?.streamUrl || getDirectVideoSrc(activeVideo) || remoteIframeState?.videoSrc || '',
+          hasExactQualityStream: Boolean(selectedQuality?.hasExactStream),
+          nativeVideoHeight: getActiveNativeVideoHeight(),
           extraStreams: collectAllKnownStreams(),
           title: getVideoTitle(),
           mode,
@@ -3011,6 +3885,7 @@
         lastDownloadError = err.message || 'Failed to start download';
         if (dlBtn) dlBtn.disabled = false;
         cancelBtn?.classList.add('vc-hidden');
+        progActions?.classList.add('vc-hidden');
         if (progStatus) progStatus.textContent = `❌ Error: ${err.message}`;
         byId('vc-post-download-wrap')?.classList.remove('vc-hidden');
       }
@@ -3022,6 +3897,7 @@
       const dlBtn = byId('vc-download-btn');
       if (dlBtn) dlBtn.disabled = false;
       byId('vc-cancel-btn')?.classList.add('vc-hidden');
+      byId('vc-progress-actions')?.classList.add('vc-hidden');
       const progStatus = byId('vc-progress-status');
       if (progStatus) progStatus.textContent = '⏹ Download cancelled';
     });
@@ -3135,6 +4011,14 @@
     }
     panelEl.classList.toggle('vc-hidden', !isOpen);
     if (isOpen) {
+      isAdvancedView = false;
+      byId('vc-advanced-top')?.classList.add('vc-hidden');
+      byId('vc-settings-bar')?.classList.add('vc-hidden');
+      byId('vc-reveal-btn')?.classList.add('vc-hidden');
+      const advBtn = byId('vc-advanced-toggle-btn');
+      advBtn?.classList.remove('vc-open');
+      advBtn?.setAttribute('aria-expanded', 'false');
+      renderQualities();
       promotePanelToTopLayer(panelEl);
       refreshVideoState();
       broadcastStateToFrames();
@@ -3144,6 +4028,7 @@
         if (typeof panelEl?.hidePopover === 'function') panelEl.hidePopover();
       } catch (_) {}
       if (markersEl) markersEl.classList.add('vc-hidden');
+      if (videoHighlightEl) videoHighlightEl.classList.add('vc-hidden');
       broadcastStateToFrames();
       if (isPreviewingLoop) {
         if (activeVideo) activeVideo.pause();
@@ -3169,8 +4054,8 @@
   });
   window.addEventListener('scroll', () => {
     if (!isContextValid()) return;
-    if (isOpen || remoteOpen) mountMarkersOnProgressBar();
-  }, true);
+    if (isOpen || remoteOpen) mountMarkersOnProgressBar(true);
+  }, { capture: true, passive: true });
 
   const handleFullscreenChange = () => {
     if (!isContextValid()) return;
@@ -3410,8 +4295,9 @@
         ensureUI();
         panelEl?.classList.remove('vc-hidden');
       }
-      if (!isOpen && markersEl) {
-        markersEl.classList.add('vc-hidden');
+      if (!isOpen) {
+        if (markersEl) markersEl.classList.add('vc-hidden');
+        if (videoHighlightEl) videoHighlightEl.classList.add('vc-hidden');
       }
       broadcastStateToFrames();
       return;
@@ -3452,12 +4338,13 @@
 
       const v = findLocalVideo();
       const isAllowedFrame = (activeIframeId === null || myFrameId === -1 || activeIframeId === myFrameId);
-      if (v && (remoteOpen || isOpen) && mode === 'fragment' && isAllowedFrame) {
+      if (v && (remoteOpen || isOpen) && isAllowedFrame) {
         ensureMarkersOnly();
         mountMarkersOnProgressBar();
         syncSlidersUI();
-      } else if (markersEl) {
-        markersEl.classList.add('vc-hidden');
+      } else {
+        if (markersEl) markersEl.classList.add('vc-hidden');
+        if (videoHighlightEl) videoHighlightEl.classList.add('vc-hidden');
       }
       return;
     }
@@ -3493,12 +4380,15 @@
     if (msg.type === 'DOWNLOAD_EVENT' && msg.event) {
       const ev = msg.event;
       const dlBtn = byId('vc-download-btn');
+      const progBox = byId('vc-progress-box');
       const progFill = byId('vc-progress-fill');
       const progStatus = byId('vc-progress-status');
       const revealBtn = byId('vc-reveal-btn');
       const cancelBtn = byId('vc-cancel-btn');
+      const progActions = byId('vc-progress-actions');
 
       if (!progStatus) return;
+      progBox?.classList.remove('vc-hidden');
 
       if (ev.type === 'progress') {
         if (progFill) progFill.style.width = `${ev.percent || 5}%`;
@@ -3511,8 +4401,9 @@
         if (progFill) progFill.style.width = '100%';
         const mediaLabel = selectedQuality?.audioOnly ? 'Audio' : 'Video';
         progStatus.textContent = `✅ ${mediaLabel} successfully downloaded`;
-        revealBtn?.classList.remove('vc-hidden');
+        revealBtn?.classList.toggle('vc-hidden', !isAdvancedView);
         cancelBtn?.classList.add('vc-hidden');
+        progActions?.classList.add('vc-hidden');
         byId('vc-post-download-wrap')?.classList.remove('vc-hidden');
       } else if (ev.type === 'cancelled') {
         if (!isDownloading && lastDownloadId !== null) return;
@@ -3521,12 +4412,15 @@
         if (progFill) progFill.style.width = '0%';
         progStatus.textContent = `⏹ ${ev.message || 'Cancelled'}`;
         cancelBtn?.classList.add('vc-hidden');
+        progActions?.classList.add('vc-hidden');
+        byId('vc-post-download-wrap')?.classList.remove('vc-hidden');
       } else if (ev.type === 'error') {
         isDownloading = false;
         lastDownloadError = ev.error || 'Unknown error';
         if (dlBtn) dlBtn.disabled = false;
         progStatus.textContent = `❌ Error: ${ev.error || 'Unknown error'}`;
         cancelBtn?.classList.add('vc-hidden');
+        progActions?.classList.add('vc-hidden');
         byId('vc-post-download-wrap')?.classList.remove('vc-hidden');
       }
     }

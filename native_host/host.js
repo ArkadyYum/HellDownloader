@@ -270,7 +270,7 @@ function formatTimeForYtDlp(seconds) {
 }
 
 function isVkUrl(urlStr) {
-  return /(^|\.|\/)(vk\.com|vkvideo\.ru)/i.test(urlStr || '');
+  return /(^|\.|\/)(vk\.com|vk\.ru|vkvideo\.ru)/i.test(urlStr || '');
 }
 
 function isYouTubeUrl(urlStr) {
@@ -286,13 +286,14 @@ function isBareFeedRootUrl(urlStr) {
     if (/^\/(feed|home|explore|foryou|following|reels|clips|shorts)$/i.test(p)) return true;
     // Subreddit feeds (e.g. reddit.com/r/videos) are feed pages; only /comments/ post URLs are direct video pages
     if (/reddit\.com$/i.test(u.hostname) && !/\/comments\//i.test(p)) return true;
+    if (/(^|\.)tiktok\.com$/i.test(u.hostname) && !/\/(?:video|photo)\/\d+|\/t\/[A-Za-z0-9]+/i.test(p) && !/^(vm|vt)\.tiktok\.com$/i.test(u.hostname)) return true;
   } catch (_) {}
   return false;
 }
 
 function isDirectYtDlpSite(urlStr) {
   if (isBareFeedRootUrl(urlStr)) return false;
-  return /(youtube\.com|youtu\.be|vk\.com|vkvideo\.ru|rutube\.ru|twitch\.tv|tiktok\.com|instagram\.com|threads\.net|threads\.com|x\.com|twitter\.com|reddit\.com\/r\/[^/]+\/comments\/|v\.redd\.it|ok\.ru|vimeo\.com|nicovideo\.jp|bilibili\.com|dailymotion\.com|archive\.org|coub\.com)/i.test(urlStr || '');
+  return /(youtube\.com|youtu\.be|vk\.com|vk\.ru|vkvideo\.ru|rutube\.ru|twitch\.tv|clips\.twitch\.tv|tiktok\.com|instagram\.com|threads\.net|threads\.com|x\.com|twitter\.com|reddit\.com\/r\/[^/]+\/comments\/|v\.redd\.it|ok\.ru|vimeo\.com|nicovideo\.jp|bilibili\.com|dailymotion\.com|archive\.org|coub\.com)/i.test(urlStr || '');
 }
 
 function isAudioOnlyStreamUrl(urlStr) {
@@ -412,11 +413,26 @@ function serveFileForChromeDownload(filePath, fileName, ext) {
 
 function normalizeTargetUrl(urlStr) {
   if (!urlStr) return '';
-  const vimeoMatch = String(urlStr).match(/^https?:\/\/(?:www\.)?vimeo\.com\/(\d+)(?:[/?#]|$)/i);
+  let s = String(urlStr);
+  // Normalize vk.ru -> vk.com so yt-dlp's VK extractor handles clips and videos directly
+  s = s.replace(/^(https?:\/\/(?:www\.|m\.)?)vk\.ru(\/|$)/i, '$1vk.com$2');
+  // Normalize Twitch recap/directory clip URLs (?clip=SLUG) to direct clips.twitch.tv/SLUG
+  if (/twitch\.tv\//i.test(s) && /[?&]clip=([A-Za-z0-9_-]+)/.test(s)) {
+    const clipMatch = s.match(/[?&]clip=([A-Za-z0-9_-]+)/);
+    if (clipMatch && clipMatch[1]) {
+      return `https://clips.twitch.tv/${clipMatch[1]}`;
+    }
+  }
+  // Normalize YouTube embed URLs (youtube.com/embed/VIDEO_ID) to standard watch URLs
+  const ytEmbedMatch = s.match(/^https?:\/\/(?:www\.)?youtube(?:-nocookie)?\.com\/embed\/([A-Za-z0-9_-]{11})(?:[/?#]|$)/i);
+  if (ytEmbedMatch && ytEmbedMatch[1]) {
+    return `https://www.youtube.com/watch?v=${ytEmbedMatch[1]}`;
+  }
+  const vimeoMatch = s.match(/^https?:\/\/(?:www\.)?vimeo\.com\/(\d+)(?:[/?#]|$)/i);
   if (vimeoMatch && vimeoMatch[1]) {
     return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
   }
-  return urlStr;
+  return s;
 }
 
 // ============================================================================
@@ -671,32 +687,35 @@ async function runDumpJsonWithCookieFallback(ytdlp, ffmpegDir, targetUrl, cookie
 const FEEDBACK_WEBHOOK_URL = 'https://script.google.com/macros/s/AKfycbwkPMkhX8mCEWPhgxfpAeJytluBnNJs8-LKDZqEtUSfuvocZKHy9mOZLTEGYJQ7LULB2A/exec';
 const APP_FEEDBACK_TAG = '#HellDownloader';
 
-function getRecentDebugLogSnippet(maxLines = 14) {
+function getRecentDebugLogSnippet(maxLines = 18) {
   try {
     if (!fs.existsSync(logPath)) return 'No debug.log entries';
     const raw = fs.readFileSync(logPath, 'utf8');
     const lines = raw
       .split(/\r?\n/)
-      .filter((l) => l.trim() && !l.includes('Received action: send_feedback'))
+      .filter((l) => l.trim() && !/Received action: (send_feedback|set_autoupdate|cleanup|ping)\b/.test(l))
       .slice(-maxLines)
-      .map((l) => l.replace(/vc_cookies_[a-z0-9_]+\.txt/gi, 'cookies.txt').slice(0, 260));
+      .map((l) => l.replace(/vc_cookies_[a-z0-9_]+\.txt/gi, 'cookies.txt').slice(0, 320));
     return lines.join('\n') || 'Empty log';
   } catch (_) {
     return 'Could not read debug.log';
   }
 }
 
-function sendFeedbackViaWebhook(textPayload, urlStr = FEEDBACK_WEBHOOK_URL, redirectsLeft = 3) {
+function sendFeedbackViaWebhook(payloadObj, urlStr = FEEDBACK_WEBHOOK_URL, redirectsLeft = 3) {
   return new Promise((resolve) => {
     try {
       const u = new URL(urlStr);
       const isPost = redirectsLeft === 3;
-      const bodyStr = isPost ? JSON.stringify({ text: textPayload }) : '';
+      const bodyStr = isPost
+        ? JSON.stringify(typeof payloadObj === 'string' ? { text: payloadObj } : payloadObj)
+        : '';
       const req = https.request(
         {
           hostname: u.hostname,
           path: u.pathname + u.search,
           port: 443,
+          family: 4,
           method: isPost ? 'POST' : 'GET',
           headers: isPost
             ? {
@@ -704,12 +723,12 @@ function sendFeedbackViaWebhook(textPayload, urlStr = FEEDBACK_WEBHOOK_URL, redi
                 'Content-Length': Buffer.byteLength(bodyStr, 'utf8')
               }
             : {},
-          timeout: 10000
+          timeout: 22000
         },
         (res) => {
           if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location && redirectsLeft > 0) {
             res.resume();
-            resolve(sendFeedbackViaWebhook(textPayload, res.headers.location, redirectsLeft - 1));
+            resolve(sendFeedbackViaWebhook(payloadObj, res.headers.location, redirectsLeft - 1));
             return;
           }
           let data = '';
@@ -738,61 +757,65 @@ function sendFeedbackViaWebhook(textPayload, urlStr = FEEDBACK_WEBHOOK_URL, redi
 
 async function handleMessage(msg) {
   const { action, requestId } = msg;
-  logDebug(`Received action: ${action} for url=${msg.url || ''}, candidates=${(msg.streamCandidates || []).length}`);
+  if (!['set_autoupdate', 'cleanup', 'ping', 'send_feedback'].includes(action)) {
+    logDebug(`Received action: ${action} for url=${msg.url || ''}, candidates=${(msg.streamCandidates || []).length}`);
+  }
 
   if (action === 'send_feedback') {
     try {
-      const logSnippet = getRecentDebugLogSnippet(14);
-      const tagsStr = Array.isArray(msg.tags) && msg.tags.length > 0 ? msg.tags.join(', ') : 'Не указано';
+      const logSnippet = getRecentDebugLogSnippet(18);
+      const tagsStr = Array.isArray(msg.tags) && msg.tags.length > 0 ? msg.tags.join(', ') : '';
       const rangeInfo = msg.mode === 'fragment' ? `Cut Fragment (${msg.startTime} — ${msg.endTime})` : 'Full Video';
+
+      const entry = {
+        timestamp: new Date().toISOString(),
+        app: APP_FEEDBACK_TAG,
+        url: msg.url || msg.pageHref || '',
+        pageHref: msg.pageHref || '',
+        title: msg.title || '',
+        mode: rangeInfo,
+        quality: msg.quality || '',
+        tags: msg.tags || [],
+        comment: msg.comment || '',
+        lastError: msg.lastError || '',
+        logSnippet
+      };
 
       // Save locally to feedback_history.jsonl so the AI assistant can inspect reports anytime
       try {
         const historyFile = path.join(publicSafeDir, 'feedback_history.jsonl');
-        const entry = {
-          timestamp: new Date().toISOString(),
-          app: APP_FEEDBACK_TAG,
-          url: msg.url || msg.pageHref || '',
-          title: msg.title || '',
-          mode: rangeInfo,
-          quality: msg.quality || '',
-          tags: msg.tags || [],
-          comment: msg.comment || '',
-          lastError: msg.lastError || '',
-          logSnippet
-        };
         fs.appendFileSync(historyFile, `${JSON.stringify(entry)}\n`, 'utf8');
       } catch (_) {}
 
+      // Short, clean notification for Telegram (without the debug.log wall; full log is stored in Google Script & feedback_history.jsonl)
       const lines = [
-        `📦 Приложение: ${APP_FEEDBACK_TAG}`,
+        `📦 ${APP_FEEDBACK_TAG} — новый баг-репорт`,
         `🌐 Ссылка: ${msg.url || msg.pageHref || '—'}`,
         `🎬 Видео: ${(msg.title || '—').slice(0, 140)}`,
         `⚙️ Режим: ${rangeInfo} • ${msg.quality || '—'}`
       ];
-      if (Array.isArray(msg.tags) && msg.tags.length > 0) {
+      if (tagsStr) {
         lines.push(`🏷 Причина: ${tagsStr}`);
       }
       if (msg.comment && msg.comment.trim()) {
         lines.push(`💬 Комментарий: ${msg.comment.trim().slice(0, 500)}`);
       }
       if (msg.lastError && msg.lastError.trim()) {
-        lines.push(`❌ Ошибка: ${msg.lastError.trim().slice(0, 350)}`);
+        lines.push(`❌ Ошибка: ${msg.lastError.trim().slice(0, 220)}`);
       }
-      lines.push('', '📋 Лог (debug.log):', logSnippet.slice(0, 2400));
+      lines.push(`🗂 Полный лог сохранён в хранилище скрипта`);
 
-      const textPayload = lines.join('\n').slice(0, 4050);
-      const webhookRes = await sendFeedbackViaWebhook(textPayload);
+      const shortTelegramText = lines.join('\n').slice(0, 1500);
+      const webhookRes = await sendFeedbackViaWebhook({
+        text: shortTelegramText,
+        fullReport: entry
+      });
 
       if (webhookRes?.ok) {
         sendMessage({ requestId, type: 'feedback_result', ok: true });
       } else {
-        sendMessage({
-          requestId,
-          type: 'feedback_result',
-          ok: false,
-          error: webhookRes?.description || webhookRes?.error || 'Ошибка отправки отчёта'
-        });
+        logDebug(`Feedback webhook warning (report saved locally to feedback_history.jsonl): ${webhookRes?.description || webhookRes?.error || 'unknown'}`);
+        sendMessage({ requestId, type: 'feedback_result', ok: true, savedLocally: true });
       }
     } catch (err) {
       sendMessage({ requestId, type: 'feedback_result', ok: false, error: err.message });
@@ -1039,26 +1062,34 @@ async function handleMessage(msg) {
 
     const candidates = Array.isArray(msg.streamCandidates) ? msg.streamCandidates : [];
 
-    const buildYtDlpArgs = (targetUrl, useCookies, referer, forceFullDownload = false, customOutPath = tempVideoPath, proxyUrl = null) => {
+    const buildYtDlpArgs = (targetUrl, useCookies, referer, forceFullDownload = false, customOutPath = tempVideoPath, proxyUrl = null, ytClientOverride = null) => {
       const isArchiveOrg = /archive\.org\//i.test(targetUrl || '');
       const isYt = isYouTubeUrl(targetUrl);
-      // On YouTube, never override yt-dlp's internal 'source' sort with ',proto:https', because YouTube throttles/drops
-      // web https streams when a GVS po_token is missing; let yt-dlp pick its best working client stream!
-      const sortSpec = isYt ? `res:${height}` : `res:${height},proto:https`;
+      const isLiveStream = Boolean(msg.isLive);
+      const sortSpec = isYt
+        ? (ytClientOverride
+            ? (height <= 1080 ? `res:${height},vcodec:h264` : `res:${height}`)
+            : (height <= 1080 ? `res:${height},proto:https,vcodec:h264` : `res:${height},proto:https`))
+        : `res:${height},proto:https`;
       const args = [
         '--no-playlist',
         '--newline',
         '--progress',
         '--force-overwrites',
         '--force-ipv4',
-        '--socket-timeout', '8',
-        '--retries', '3',
-        '--fragment-retries', '3',
-        '--concurrent-fragments', isArchiveOrg ? '16' : '4',
+        '--socket-timeout', isYt ? '4' : '8',
+        '--retries', isYt ? '2' : '3',
+        '--fragment-retries', isYt ? '2' : '3',
+        '--concurrent-fragments', isArchiveOrg ? '16' : (isYt ? '3' : '4'),
         '--js-runtimes', `node:${process.execPath}`,
         '--ffmpeg-location', ffmpegDir,
         '--downloader-args', 'ffmpeg_i:-tls_verify 0 -multiple_requests 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -rw_timeout 15000000'
       ];
+      if (isYt && ytClientOverride) {
+        args.push('--extractor-args', `youtube:player_client=${ytClientOverride}`);
+      } else if (isYt && !isLiveStream) {
+        args.push('--extractor-args', 'youtube:player_skip=hls');
+      }
       if (proxyUrl) {
         args.push('--proxy', proxyUrl);
       }
@@ -1073,10 +1104,8 @@ async function handleMessage(msg) {
         args.push('--referer', referer);
       }
 
-      const isLiveStream = Boolean(msg.isLive);
-
       if (audioOnly) {
-        args.push('-f', 'ba/b', '-x', '--audio-format', 'mp3', '--audio-quality', '0');
+        args.push('-f', isYt ? 'ba[protocol=https][ext=m4a]/ba[protocol=https]/ba[ext=m4a]/ba/b' : 'ba/b', '-x', '--audio-format', 'mp3', '--audio-quality', '0');
       } else if (isLiveStream) {
         // On live broadcasts, always prefer a single muxed video+audio stream (b) so ffmpeg captures both video and audio in sync
         args.push(
@@ -1093,20 +1122,26 @@ async function handleMessage(msg) {
           '--merge-output-format', 'mp4'
         );
       } else if (height <= 1080) {
+        const ytFormatSpec = ytClientOverride
+          ? 'bv*[vcodec^=avc]+ba[ext=m4a]/bv*[vcodec^=avc]+ba/bv*+ba/b'
+          : 'bv*[protocol=https][vcodec^=avc]+ba[protocol=https][ext=m4a]/bv*[protocol=https]+ba[protocol=https]/b[protocol=https]/bv*[vcodec^=avc]+ba[ext=m4a]/bv*+ba/b';
         args.push(
           '-S', sortSpec,
           '-f',
-          'bv*[vcodec^=avc]+ba[ext=m4a]/bv*[vcodec^=avc]+ba/bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b[ext=mp4]/b',
+          isYt ? ytFormatSpec : 'bv*[vcodec^=avc]+ba[ext=m4a]/bv*[vcodec^=avc]+ba/bv*[ext=mp4]+ba[ext=m4a]/bv*+ba/b[ext=mp4]/b',
           '--merge-output-format',
           'mp4',
           '--ppa',
           'Merger+ffmpeg_o:-c:v copy -c:a aac'
         );
       } else {
+        const ytHighSpec = ytClientOverride
+          ? 'bv*+ba/b'
+          : 'bv*[protocol=https]+ba[protocol=https]/bv*+ba/b';
         args.push(
           '-S', sortSpec,
           '-f',
-          'bv*+ba/b',
+          isYt ? ytHighSpec : 'bv*+ba/b',
           '--merge-output-format',
           'mkv'
         );
@@ -1132,7 +1167,14 @@ async function handleMessage(msg) {
       return args;
     };
 
-    const runLocalFfmpegCut = (inputPath, outputPath) => new Promise((resolve) => {
+    const needsLocalResolutionScale = (targetUrl) => {
+      if (audioOnly || Boolean(msg.hasExactQualityStream)) return false;
+      const nativeH = Number(msg.nativeVideoHeight) || 0;
+      if (nativeH <= height + 40) return false;
+      return /\/video\/tos\/|mime_type=video_mp4/i.test(targetUrl || '');
+    };
+
+    const runLocalFfmpegCut = (inputPath, outputPath, applyScale = false) => new Promise((resolve) => {
       const ffmpegExe = path.join(ffmpegDir, 'ffmpeg.exe');
       const durationSec = Math.max(0.1, endTime - startTime);
       const ffArgs = [
@@ -1144,7 +1186,10 @@ async function handleMessage(msg) {
       if (audioOnly) {
         ffArgs.push('-vn', '-c:a', 'libmp3lame', '-q:a', '0');
       } else {
-        ffArgs.push('-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart');
+        if (applyScale) {
+          ffArgs.push('-vf', `scale='if(lt(iw,ih),${height},-2)':'if(lt(iw,ih),-2,${height})'`);
+        }
+        ffArgs.push('-c:v', 'libx264', '-preset', 'superfast', '-crf', '18', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart');
       }
       ffArgs.push(outputPath);
 
@@ -1154,6 +1199,39 @@ async function handleMessage(msg) {
         type: 'progress',
         percent: 90,
         stage: `Cutting fragment locally (${durationSec.toFixed(1)}s)...`
+      });
+
+      activeProc = spawn(ffmpegExe, ffArgs, { windowsHide: true });
+      activeProc.on('close', (code) => {
+        activeProc = null;
+        resolve(code);
+      });
+      activeProc.on('error', () => {
+        activeProc = null;
+        resolve(1);
+      });
+    });
+
+    const runLocalFfmpegScale = (inputPath, outputPath) => new Promise((resolve) => {
+      const ffmpegExe = path.join(ffmpegDir, 'ffmpeg.exe');
+      const ffArgs = [
+        '-y',
+        '-i', inputPath,
+        '-vf', `scale='if(lt(iw,ih),${height},-2)':'if(lt(iw,ih),-2,${height})'`,
+        '-c:v', 'libx264',
+        '-preset', 'superfast',
+        '-crf', '19',
+        '-c:a', 'copy',
+        '-movflags', '+faststart',
+        outputPath
+      ];
+
+      logDebug(`Running local ffmpeg scale to ${height}p: ${ffmpegExe} ${ffArgs.join(' ')}`);
+      sendMessage({
+        requestId,
+        type: 'progress',
+        percent: 92,
+        stage: `Converting resolution to ${height}p...`
       });
 
       activeProc = spawn(ffmpegExe, ffArgs, { windowsHide: true });
@@ -1183,15 +1261,74 @@ async function handleMessage(msg) {
       logDebug(`Starting yt-dlp with args: ${args.join(' ')}`);
       // Note: Do not set HTTPS_PROXY in process.env because yt-dlp already receives --proxy, while ffmpeg's GnuTLS
       // fails with code 4294967158 when HTTPS_PROXY env var is set (and CDN hosts resolve directly via system DNS).
-      activeProc = spawn(ytdlp, args, { windowsHide: true });
+      const proc = spawn(ytdlp, args, { windowsHide: true });
+      activeProc = proc;
+      let ffmpegStallTimer = null;
+      let networkTimeoutCount = 0;
+
+      const resetFfmpegStallWatchdog = (ms = 12000) => {
+        if (ffmpegStallTimer) clearTimeout(ffmpegStallTimer);
+        if (!isFragment || isFallbackFull) return;
+        ffmpegStallTimer = setTimeout(() => {
+          if (activeProc === proc && proc.pid) {
+            logDebug(`ffmpeg --download-sections network stall detected (${ms}ms with no progress); terminating to trigger fast local fallback`);
+            errorLines.push('ERROR: ffmpeg exited with code 1 (network stall timeout)');
+            try {
+              execFileSync('taskkill.exe', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore' });
+            } catch (_) {}
+          }
+        }, ms);
+      };
+
+      const clearFfmpegStallWatchdog = () => {
+        if (ffmpegStallTimer) {
+          clearTimeout(ffmpegStallTimer);
+          ffmpegStallTimer = null;
+        }
+      };
+
+      let isTestingFormats = false;
 
       const parseOutput = (chunkStr) => {
         const lines = chunkStr.split(/\r?\n/);
         for (const line of lines) {
           if (!line.trim()) continue;
 
+          if (/\[info\]\s+Testing format\b/i.test(line)) {
+            isTestingFormats = true;
+            sendMessage({
+              requestId,
+              type: 'progress',
+              percent: Math.max(4, lastPercent),
+              stage: 'Selecting working CDN stream...'
+            });
+            continue;
+          }
+
+          if (/\[info\].*Downloading \d+ format\(s\):|\[download\]\s+Destination:|\[hlsnative\]\s+Downloading/i.test(line)) {
+            isTestingFormats = false;
+            networkTimeoutCount = 0;
+          }
+
+          if (isFragment && !isFallbackFull && /Downloading \d+ time ranges/i.test(line)) {
+            resetFfmpegStallWatchdog(12000);
+          }
+
+          if (/getaddrinfo failed|Failed to resolve/i.test(line) || /Read timed out|Connection timed out|fragment \d+ not found/i.test(line)) {
+            networkTimeoutCount++;
+            if (networkTimeoutCount >= 2 && lastPercent <= 8 && activeProc === proc && proc.pid) {
+              logDebug(`Early CDN/GGC stall detected (${line.trim().slice(0, 120)}); aborting stalled yt-dlp to switch route`);
+              errorLines.push(`ERROR: ${line.trim()}`);
+              try {
+                execFileSync('taskkill.exe', ['/PID', String(proc.pid), '/T', '/F'], { stdio: 'ignore' });
+              } catch (_) {}
+              return;
+            }
+          }
+
           const pctMatch = line.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
           if (pctMatch) {
+            resetFfmpegStallWatchdog(12000);
             const rawPct = parseFloat(pctMatch[1]);
             const scaledPct = isFallbackFull ? Math.round(rawPct * 0.85) : rawPct;
             const pct = Math.min(97, Math.max(lastPercent, scaledPct));
@@ -1214,6 +1351,7 @@ async function handleMessage(msg) {
 
           const timeMatch = line.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/);
           if (timeMatch && isFragment && endTime > startTime) {
+            resetFfmpegStallWatchdog(12000);
             const curSec = Number(timeMatch[1]) * 3600 + Number(timeMatch[2]) * 60 + Number(timeMatch[3]);
             const totalDur = Math.max(1, endTime - startTime);
             const pct = Math.min(96, Math.max(lastPercent, Math.round((curSec / totalDur) * 95)));
@@ -1230,6 +1368,7 @@ async function handleMessage(msg) {
           }
 
           if (line.includes('[Merger]') || line.includes('[ExtractAudio]') || line.includes('[Fixup')) {
+            clearFfmpegStallWatchdog();
             sendMessage({
               requestId,
               type: 'progress',
@@ -1245,14 +1384,16 @@ async function handleMessage(msg) {
         }
       };
 
-      activeProc.stdout.on('data', (d) => parseOutput(d.toString('utf8')));
-      activeProc.stderr.on('data', (d) => parseOutput(d.toString('utf8')));
-      activeProc.on('close', (code) => {
-        activeProc = null;
+      proc.stdout.on('data', (d) => parseOutput(d.toString('utf8')));
+      proc.stderr.on('data', (d) => parseOutput(d.toString('utf8')));
+      proc.on('close', (code) => {
+        clearFfmpegStallWatchdog();
+        if (activeProc === proc) activeProc = null;
         resolve(code);
       });
-      activeProc.on('error', () => {
-        activeProc = null;
+      proc.on('error', () => {
+        clearFfmpegStallWatchdog();
+        if (activeProc === proc) activeProc = null;
         resolve(1);
       });
     });
@@ -1270,7 +1411,39 @@ async function handleMessage(msg) {
 
       let proxyUrl = await getDohProxyIfNeeded(targetUrl, false);
       if (myGen !== downloadGeneration) return 1;
-      let args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl);
+
+      const isYt = isYouTubeUrl(targetUrl);
+      const isYtShort = isYt && /\/shorts\//i.test(targetUrl || '');
+      const shouldScaleSingleStream = needsLocalResolutionScale(targetUrl);
+
+      // For YouTube Shorts in Cut Fragment mode (or direct single-stream URLs needing resolution scaling in fragment mode),
+      // downloading the full clip and cutting locally via ffmpeg is faster and avoids network demuxer stalls
+      if ((isYtShort || shouldScaleSingleStream) && isFragment && endTime > startTime) {
+        const tempFullPath = path.join(getAsciiTempDir(), `vc_full_${Date.now()}.${ext}`);
+        activeTempFullVideo = tempFullPath;
+        try {
+          let fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, null);
+          let fullCode = await runYtDlpProcess(fullArgs, true);
+          if (fullCode !== 0 && isYt && myGen === downloadGeneration) {
+            errorLines = [];
+            fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, 'ios,web_safari,tv,default');
+            fullCode = await runYtDlpProcess(fullArgs, true);
+          }
+          if (myGen === downloadGeneration && fullCode === 0 && isValidOutputFile(tempFullPath)) {
+            const cutCode = await runLocalFfmpegCut(tempFullPath, tempVideoPath, shouldScaleSingleStream);
+            if (myGen === downloadGeneration && cutCode === 0 && isValidOutputFile(tempVideoPath)) {
+              return 0;
+            }
+          }
+        } finally {
+          if (fs.existsSync(tempFullPath)) {
+            try { fs.unlinkSync(tempFullPath); } catch (_) {}
+          }
+          activeTempFullVideo = null;
+        }
+      }
+
+      let args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl, null);
       let code = await runYtDlpProcess(args, false);
       if (myGen !== downloadGeneration) return 1;
 
@@ -1281,7 +1454,16 @@ async function handleMessage(msg) {
         errorLines = [];
         proxyUrl = await ensureDohProxyServer();
         if (myGen !== downloadGeneration) return 1;
-        args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl);
+        args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl, null);
+        code = await runYtDlpProcess(args, false);
+        if (myGen !== downloadGeneration) return 1;
+      }
+
+      // If YouTube stalled or failed on a blackholed ISP GGC server (Read timed out / fragment not found / 403 / 503), immediately retry with HLS-capable clients!
+      if (code !== 0 && isYt && errorLines.some((l) => /timed out|fragment \d+ not found|empty|HTTP Error (403|503)|bytes read,\s*\d+\s*more expected|Requested format is not available/i.test(l)) && myGen === downloadGeneration) {
+        logDebug(`YouTube GGC edge error on ${targetUrl}; retrying with alternate player_client=ios,web_safari,tv,default (HLS enabled)`);
+        errorLines = [];
+        args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl, 'ios,web_safari,tv,default');
         code = await runYtDlpProcess(args, false);
         if (myGen !== downloadGeneration) return 1;
       }
@@ -1297,18 +1479,18 @@ async function handleMessage(msg) {
 
       // Automatic Two-Step Local Cut Fallback:
       // If cutting a fragment directly over the network failed because FFmpeg's internal HLS/DASH demuxer
-      // rejected segment TLS or manifest seeking (e.g. strm.yandex.ru/*.mpd), download full stream via yt-dlp and cut locally!
-      const hadFfmpegNetworkError = errorLines.some((l) => /ffmpeg exited with code/i.test(l));
+      // rejected segment TLS or manifest seeking (e.g. strm.yandex.ru/*.mpd or YouTube HLS), download full stream via yt-dlp and cut locally!
+      const hadFfmpegNetworkError = errorLines.some((l) => /ffmpeg exited with code|fragment \d+ not found|Read timed out/i.test(l));
       if (code !== 0 && isFragment && endTime > startTime && hadFfmpegNetworkError && myGen === downloadGeneration) {
-        logDebug(`Direct --download-sections failed with ffmpeg error on ${targetUrl}; falling back to full download + local ffmpeg cut`);
+        logDebug(`Direct --download-sections failed with network/ffmpeg error on ${targetUrl}; falling back to full download + local ffmpeg cut`);
         errorLines = [];
         const tempFullPath = path.join(getAsciiTempDir(), `vc_full_${Date.now()}.${ext}`);
         activeTempFullVideo = tempFullPath;
         try {
-          const fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl);
+          const fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, isYt ? 'ios,web_safari,tv,default' : null);
           const fullCode = await runYtDlpProcess(fullArgs, true);
           if (myGen === downloadGeneration && fullCode === 0 && isValidOutputFile(tempFullPath)) {
-            const cutCode = await runLocalFfmpegCut(tempFullPath, tempVideoPath);
+            const cutCode = await runLocalFfmpegCut(tempFullPath, tempVideoPath, shouldScaleSingleStream);
             if (myGen === downloadGeneration && cutCode === 0 && isValidOutputFile(tempVideoPath)) {
               code = 0;
             } else {
@@ -1323,6 +1505,29 @@ async function handleMessage(msg) {
             try { fs.unlinkSync(tempFullPath); } catch (_) {}
           }
           activeTempFullVideo = null;
+        }
+      }
+
+      // If full-video download came from a single-resolution direct stream (e.g. TikTok CDN) and user selected a lower resolution (e.g. 540p or 720p), scale locally
+      if (code === 0 && !isFragment && shouldScaleSingleStream && isValidOutputFile(tempVideoPath) && myGen === downloadGeneration) {
+        const tempUnscaledPath = path.join(getAsciiTempDir(), `vc_unscaled_${Date.now()}.${ext}`);
+        try {
+          fs.renameSync(tempVideoPath, tempUnscaledPath);
+          const scaleCode = await runLocalFfmpegScale(tempUnscaledPath, tempVideoPath);
+          if (scaleCode !== 0 || !isValidOutputFile(tempVideoPath)) {
+            if (fs.existsSync(tempVideoPath)) {
+              try { fs.unlinkSync(tempVideoPath); } catch (_) {}
+            }
+            fs.renameSync(tempUnscaledPath, tempVideoPath);
+          }
+        } catch (_) {
+          if (!fs.existsSync(tempVideoPath) && fs.existsSync(tempUnscaledPath)) {
+            try { fs.renameSync(tempUnscaledPath, tempVideoPath); } catch (_) {}
+          }
+        } finally {
+          if (fs.existsSync(tempUnscaledPath)) {
+            try { fs.unlinkSync(tempUnscaledPath); } catch (_) {}
+          }
         }
       }
 
@@ -1344,6 +1549,7 @@ async function handleMessage(msg) {
     const attempts = [];
     const hasKodikCandidate = Boolean(candidates[0] && isKodikStreamUrl(candidates[0].url));
     const isArchivePage = /archive\.org\/details\//i.test(msg.url || '');
+    const isTikTokPage = /tiktok\.com\//i.test(msg.url || '');
 
     // Fast path for Archive.org fragment cuts: if the browser <video src> is already a direct .mp4 on Archive.org's CDN
     // (e.g. https://dn720301.ca.archive.org/.../video.ia.mp4 for <=480p or video.mp4 for 1080p), use it directly to skip
@@ -1356,6 +1562,11 @@ async function handleMessage(msg) {
         // Also try replacing .ia.mp4 with .mp4 directly on the resolved Archive CDN node!
         addUrlAttempts(attempts, msg.videoSrc.replace(/\.ia\.mp4(\?|$)/i, '.mp4$1'), msg.url);
       }
+    }
+
+    // On TikTok, direct CDN stream URLs from the browser player (videoSrc) bypass TikTok's regional IP block on yt-dlp webpage scraping
+    if (isTikTokPage && msg.videoSrc && /^https?:\/\//i.test(msg.videoSrc) && !isAdNetworkUrl(msg.videoSrc)) {
+      addUrlAttempts(attempts, msg.videoSrc, msg.url);
     }
 
     if (isDirectYtDlpSite(msg.url)) {

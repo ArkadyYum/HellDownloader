@@ -363,7 +363,7 @@ function collectTabStreams(tabId, extraStreams = [], pageUrl = '', activeFrameId
     // On multi-video feed pages (like ya.ru Rhythms or TikTok), deprioritize background tab webRequest streams so the active <video>'s stream wins
     const feedPenalty = isFeedPage && extraStreams && extraStreams.length > 0 ? -40 : 0;
     // Give a recency bonus to newly loaded streams so switching players (e.g. CVH <-> Kodik on AnimeGO) prioritizes the active player
-    const ageMs = now - (item.timestamp || 0);
+    const ageMs = now - (item.time || item.timestamp || 0);
     const recencyBonus = (ageMs < 30000 ? 18 : (ageMs < 120000 ? 8 : 0)) + Math.max(0, 6 - idx);
     addCandidate(item.url, item.referer || pageUrl, feedPenalty + recencyBonus);
   }
@@ -638,6 +638,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         requestId: String(Date.now()),
         url: message.url,
         videoSrc: message.videoSrc || '',
+        hasExactQualityStream: Boolean(message.hasExactQualityStream),
+        nativeVideoHeight: Number(message.nativeVideoHeight) || 0,
         streamCandidates,
         title: message.title,
         mode: message.mode,
