@@ -4215,8 +4215,11 @@
 
   window.addEventListener('keydown', async (e) => {
     if (!isContextValid()) return;
+    const rawKey = typeof e.key === 'string' ? e.key : '';
+    const rawCode = typeof e.code === 'string' ? e.code : '';
+    if (!rawKey && !rawCode) return;
     if (isRecordingHotkey) {
-      if (['Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) return;
+      if (['Shift', 'Control', 'Alt', 'Meta'].includes(rawKey)) return;
       e.preventDefault();
       e.stopPropagation();
       e.stopImmediatePropagation();
@@ -4225,12 +4228,12 @@
       if (e.ctrlKey) parts.push('Ctrl');
       if (e.altKey) parts.push('Alt');
       if (e.shiftKey) parts.push('Shift');
-      const keyName = e.code.startsWith('Key') ? e.code.slice(3) : e.key.toUpperCase();
+      const keyName = rawCode.startsWith('Key') ? rawCode.slice(3) : rawKey.toUpperCase();
       parts.push(keyName);
 
       currentHotkey = {
-        code: e.code,
-        key: e.key,
+        code: rawCode,
+        key: rawKey,
         shiftKey: e.shiftKey,
         ctrlKey: e.ctrlKey,
         altKey: e.altKey,
@@ -4244,7 +4247,7 @@
       return;
     }
 
-    const matchCode = (e.code === currentHotkey.code) || (e.key.toUpperCase() === (currentHotkey.key || '').toUpperCase());
+    const matchCode = (rawCode && rawCode === currentHotkey.code) || (rawKey && rawKey.toUpperCase() === String(currentHotkey.key || '').toUpperCase());
     const matchMods =
       Boolean(e.shiftKey) === Boolean(currentHotkey.shiftKey) &&
       Boolean(e.ctrlKey) === Boolean(currentHotkey.ctrlKey) &&
@@ -4270,7 +4273,9 @@
 
   window.addEventListener('keyup', (e) => {
     if (!isContextValid()) return;
-    const matchCode = (e.code === currentHotkey.code) || (e.key.toUpperCase() === (currentHotkey.key || '').toUpperCase());
+    const rawKey = typeof e.key === 'string' ? e.key : '';
+    const rawCode = typeof e.code === 'string' ? e.code : '';
+    const matchCode = (rawCode && rawCode === currentHotkey.code) || (rawKey && rawKey.toUpperCase() === String(currentHotkey.key || '').toUpperCase());
     if (hotkeyActiveDown || matchCode) {
       if (matchCode) {
         e.preventDefault();
