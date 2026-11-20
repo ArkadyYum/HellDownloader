@@ -4,6 +4,7 @@ const os = require('os');
 const http = require('http');
 const https = require('https');
 const net = require('net');
+const dgram = require('dgram');
 const dns = require('dns');
 const { spawn, execFileSync } = require('child_process');
 
@@ -500,6 +501,100 @@ const dohDnsCache = new Map();
 let dohProxyServer = null;
 let dohProxyPort = 0;
 let forceDohProxyGlobal = false;
+let bypassVpnForYouTube = false;
+let ytSplitTunnelCache = { expires: 0, info: null };
+
+function getRouteLocalIp(destIp) {
+  return new Promise((resolve) => {
+    if (!destIp || !/^\d+\.\d+\.\d+\.\d+$/.test(destIp)) {
+      resolve(null);
+      return;
+    }
+    try {
+      const sock = dgram.createSocket('udp4');
+      const timer = setTimeout(() => {
+        try { sock.close(); } catch (_) {}
+        resolve(null);
+      }, 400);
+      sock.on('error', () => {
+        clearTimeout(timer);
+        try { sock.close(); } catch (_) {}
+        resolve(null);
+      });
+      sock.connect(443, destIp, () => {
+        clearTimeout(timer);
+        let localAddr = null;
+        try { localAddr = sock.address().address; } catch (_) {}
+        try { sock.close(); } catch (_) {}
+        resolve(localAddr);
+      });
+    } catch (_) {
+      resolve(null);
+    }
+  });
+}
+
+async function detectYouTubeSplitTunnel() {
+  if (ytSplitTunnelCache.info && ytSplitTunnelCache.expires > Date.now()) {
+    return ytSplitTunnelCache.info;
+  }
+  const fallback = { active: false, vpnLocalIp: null, ispLocalIp: null, vpnGfeIp: null };
+  try {
+    const defaultLocalIp = await getRouteLocalIp('8.8.8.8');
+    if (!defaultLocalIp) return fallback;
+
+    const ytSysIp = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 1000);
+      dns.lookup('www.youtube.com', { family: 4 }, (err, address) => {
+        clearTimeout(timer);
+        resolve(!err && address ? address : null);
+      });
+    });
+    if (!ytSysIp) return fallback;
+
+    const ytLocalIp = await getRouteLocalIp(ytSysIp);
+    if (!ytLocalIp || ytLocalIp === defaultLocalIp) {
+      ytSplitTunnelCache = { expires: Date.now() + 60 * 1000, info: fallback };
+      return fallback;
+    }
+
+    // Split-tunnel mismatch detected: www.youtube.com (e.g. 142.251.157.4) is routed via physical ISP NIC
+    // while default traffic / Google CDN (8.8.8.8 / 74.125.x.x / 173.194.x.x) is routed via VPN tunnel!
+    const gfeCandidates = [];
+    const sysGfe = await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 800);
+      dns.lookup('youtubei.googleapis.com', { family: 4 }, (err, address) => {
+        clearTimeout(timer);
+        resolve(!err && address ? address : null);
+      });
+    });
+    if (sysGfe) gfeCandidates.push(sysGfe);
+    gfeCandidates.push('172.217.115.4', '142.250.180.2', '172.217.16.142');
+
+    let vpnGfeIp = null;
+    for (const candIp of gfeCandidates) {
+      const candLocal = await getRouteLocalIp(candIp);
+      if (candLocal === defaultLocalIp) {
+        vpnGfeIp = candIp;
+        break;
+      }
+    }
+
+    const info = {
+      active: Boolean(vpnGfeIp),
+      vpnLocalIp: defaultLocalIp,
+      ispLocalIp: ytLocalIp,
+      vpnGfeIp
+    };
+    if (info.active) {
+      logDebug(`Split-tunnel VPN detected for YouTube (ISP NIC=${ytLocalIp} for ${ytSysIp}, VPN NIC=${defaultLocalIp}); using VPN GFE ${vpnGfeIp}`);
+    }
+    ytSplitTunnelCache = { expires: Date.now() + 60 * 1000, info };
+    return info;
+  } catch (_) {
+    return fallback;
+  }
+}
 
 function queryDohEndpoint(endpointUrl) {
   return new Promise((resolve) => {
@@ -543,6 +638,16 @@ async function resolveHostWithDoH(hostname) {
   const cached = dohDnsCache.get(cleanHost);
   if (cached && cached.expires > Date.now()) {
     return cached.ip;
+  }
+
+  // If a split-tunnel VPN is active where www.youtube.com's default IP (e.g. 142.251.128.0/17) bypasses the VPN
+  // and lands on a dead regional ISP GGC cache, route YouTube front-end hosts through a VPN-routed Google GFE IP!
+  if (!bypassVpnForYouTube && /(^|\.)(youtube\.com|youtu\.be|manifest\.googlevideo\.com)$/i.test(cleanHost)) {
+    const splitInfo = await detectYouTubeSplitTunnel();
+    if (splitInfo.active && splitInfo.vpnGfeIp) {
+      dohDnsCache.set(cleanHost, { ip: splitInfo.vpnGfeIp, expires: Date.now() + 5 * 60 * 1000 });
+      return splitInfo.vpnGfeIp;
+    }
   }
 
   // For CDN edge domains (e.g. *.googlevideo.com), try fast system DNS first so ISP-local GGC edge servers are used
@@ -650,7 +755,14 @@ async function getDohProxyIfNeeded(targetUrl, forceProxy = false) {
     return ensureDohProxyServer();
   }
   try {
-    const u = new URL(normalizeTargetUrl(targetUrl));
+    const normUrl = normalizeTargetUrl(targetUrl);
+    if (isYouTubeUrl(normUrl) && !bypassVpnForYouTube) {
+      const splitInfo = await detectYouTubeSplitTunnel();
+      if (splitInfo.active && splitInfo.vpnGfeIp) {
+        return ensureDohProxyServer();
+      }
+    }
+    const u = new URL(normUrl);
     const host = u.hostname;
     if (!host || /^\d+\.\d+\.\d+\.\d+$/.test(host) || host === 'localhost') return null;
     const systemOk = await new Promise((resolve) => {
@@ -678,6 +790,7 @@ function isDnsFailureText(text) {
 }
 
 async function runDumpJsonOnce(ytdlp, ffmpegDir, targetUrl, cookieFile, userAgent, referer, forceProxy = false, customHeaders = null) {
+  const isYt = isYouTubeUrl(targetUrl);
   const proxyUrl = await getDohProxyIfNeeded(targetUrl, forceProxy);
   return new Promise((resolve) => {
     const args = [
@@ -690,8 +803,8 @@ async function runDumpJsonOnce(ytdlp, ffmpegDir, targetUrl, cookieFile, userAgen
     if (proxyUrl) args.push('--proxy', proxyUrl);
     if (ffmpegDir) args.push('--ffmpeg-location', ffmpegDir);
     if (cookieFile && fs.existsSync(cookieFile)) args.push('--cookies', cookieFile);
-    if (userAgent) args.push('--user-agent', userAgent);
-    if (referer && /^https?:\/\//i.test(referer)) args.push('--referer', referer);
+    if (userAgent && !isYt) args.push('--user-agent', userAgent);
+    if (referer && /^https?:\/\//i.test(referer) && !isYt) args.push('--referer', referer);
     if (customHeaders && typeof customHeaders === 'object') {
       for (const [hName, hVal] of Object.entries(customHeaders)) {
         if (hName && hVal) args.push('--add-header', `${hName}:${hVal}`);
@@ -714,11 +827,17 @@ async function runDumpJsonOnce(ytdlp, ffmpegDir, targetUrl, cookieFile, userAgen
 }
 
 async function runDumpJsonWithCookieFallback(ytdlp, ffmpegDir, targetUrl, cookiesTxt, userAgent, referer, customHeaders = null) {
-  const preferNoCookieFirst = isVkUrl(targetUrl) || isYouTubeUrl(targetUrl);
+  const isYt = isYouTubeUrl(targetUrl);
+  const splitInfo = isYt ? await detectYouTubeSplitTunnel() : { active: false };
+  const preferNoCookieFirst = isVkUrl(targetUrl) || (isYt && !splitInfo.active);
   const firstUseCookie = !preferNoCookieFirst && Boolean(cookiesTxt);
   const secondUseCookie = preferNoCookieFirst && Boolean(cookiesTxt);
 
   const runAttempt = async (useCookie, forceProxy = false) => {
+    if (isYt && splitInfo.active) {
+      bypassVpnForYouTube = !useCookie;
+      dohDnsCache.clear();
+    }
     const tmpCookie = useCookie ? writeTempCookies(cookiesTxt) : null;
     try {
       let r = await runDumpJsonOnce(ytdlp, ffmpegDir, targetUrl, tmpCookie, userAgent, referer, forceProxy, customHeaders);
@@ -1120,6 +1239,7 @@ async function handleMessage(msg) {
     const hasCookies = Boolean(msg.cookiesTxt && typeof msg.cookiesTxt === 'string' && msg.cookiesTxt.trim());
 
     const candidates = Array.isArray(msg.streamCandidates) ? msg.streamCandidates : [];
+    const ytSplitInfo = isYouTubeUrl(msg.url) ? await detectYouTubeSplitTunnel() : { active: false };
 
     const buildYtDlpArgs = (targetUrl, useCookies, referer, forceFullDownload = false, customOutPath = tempVideoPath, proxyUrl = null, ytClientOverride = null, customHeaders = null) => {
       const isArchiveOrg = /archive\.org\//i.test(targetUrl || '');
@@ -1127,7 +1247,7 @@ async function handleMessage(msg) {
       const isLiveStream = Boolean(msg.isLive);
       const sortSpec = isYt
         ? (ytClientOverride
-            ? (height <= 1080 ? `res:${height},vcodec:h264` : `res:${height}`)
+            ? (height <= 1080 ? `res:${height},proto:m3u8,vcodec:h264` : `res:${height},proto:m3u8`)
             : (height <= 1080 ? `res:${height},proto:https,vcodec:h264` : `res:${height},proto:https`))
         : `res:${height},proto:https`;
       const args = [
@@ -1142,7 +1262,7 @@ async function handleMessage(msg) {
         '--concurrent-fragments', isArchiveOrg ? '16' : (isYt ? '3' : '8'),
         '--js-runtimes', `node:${process.execPath}`,
         '--ffmpeg-location', ffmpegDir,
-        '--downloader-args', 'ffmpeg_i:-tls_verify 0 -multiple_requests 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -rw_timeout 15000000'
+        '--downloader-args', 'ffmpeg_i:-tls_verify 0 -multiple_requests 1 -reconnect 1 -reconnect_streamed 1 -reconnect_on_network_error 1 -reconnect_on_http_error 5xx -reconnect_delay_max 5 -rw_timeout 15000000'
       ];
       if (isYt && ytClientOverride) {
         args.push('--extractor-args', `youtube:player_client=${ytClientOverride}`);
@@ -1156,10 +1276,10 @@ async function handleMessage(msg) {
       if (useCookies && activeTempCookie && fs.existsSync(activeTempCookie)) {
         args.push('--cookies', activeTempCookie);
       }
-      if (msg.userAgent) {
+      if (msg.userAgent && !isYt) {
         args.push('--user-agent', msg.userAgent);
       }
-      if (referer && /^https?:\/\//i.test(referer)) {
+      if (referer && /^https?:\/\//i.test(referer) && !isYt) {
         args.push('--referer', referer);
       }
       if (customHeaders && typeof customHeaders === 'object') {
@@ -1187,7 +1307,7 @@ async function handleMessage(msg) {
         );
       } else if (height <= 1080) {
         const ytFormatSpec = ytClientOverride
-          ? 'bv*[vcodec^=avc]+ba[ext=m4a]/bv*[vcodec^=avc]+ba/bv*+ba/b'
+          ? 'bv*[protocol^=m3u8][vcodec^=avc]+ba[protocol^=m3u8]/b[protocol^=m3u8]/bv*[vcodec^=avc]+ba[ext=m4a]/bv*[vcodec^=avc]+ba/bv*+ba/b'
           : 'bv*[protocol=https][vcodec^=avc]+ba[protocol=https][ext=m4a]/bv*[protocol=https]+ba[protocol=https]/b[protocol=https]/bv*[vcodec^=avc]+ba[ext=m4a]/bv*+ba/b';
         args.push(
           '-S', sortSpec,
@@ -1200,7 +1320,7 @@ async function handleMessage(msg) {
         );
       } else {
         const ytHighSpec = ytClientOverride
-          ? 'bv*+ba/b'
+          ? 'bv*[protocol^=m3u8]+ba[protocol^=m3u8]/bv*+ba/b'
           : 'bv*[protocol=https]+ba[protocol=https]/bv*+ba/b';
         args.push(
           '-S', sortSpec,
@@ -1330,7 +1450,7 @@ async function handleMessage(msg) {
       let ffmpegStallTimer = null;
       let networkTimeoutCount = 0;
 
-      const resetFfmpegStallWatchdog = (ms = 12000) => {
+      const resetFfmpegStallWatchdog = (ms = 18000) => {
         if (ffmpegStallTimer) clearTimeout(ffmpegStallTimer);
         if (!isFragment || isFallbackFull) return;
         ffmpegStallTimer = setTimeout(() => {
@@ -1375,7 +1495,7 @@ async function handleMessage(msg) {
           }
 
           if (isFragment && !isFallbackFull && /Downloading \d+ time ranges/i.test(line)) {
-            resetFfmpegStallWatchdog(12000);
+            resetFfmpegStallWatchdog(18000);
           }
 
           if (/getaddrinfo failed|Failed to resolve/i.test(line) || /Read timed out|Connection timed out|fragment \d+ not found/i.test(line)) {
@@ -1392,7 +1512,7 @@ async function handleMessage(msg) {
 
           const pctMatch = line.match(/\[download\]\s+(\d+(?:\.\d+)?)%/);
           if (pctMatch) {
-            resetFfmpegStallWatchdog(12000);
+            resetFfmpegStallWatchdog(18000);
             const rawPct = parseFloat(pctMatch[1]);
             const scaledPct = isFallbackFull ? Math.round(rawPct * 0.85) : rawPct;
             const pct = Math.min(97, Math.max(lastPercent, scaledPct));
@@ -1415,7 +1535,7 @@ async function handleMessage(msg) {
 
           const timeMatch = line.match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/);
           if (timeMatch && isFragment && endTime > startTime) {
-            resetFfmpegStallWatchdog(12000);
+            resetFfmpegStallWatchdog(18000);
             const curSec = Number(timeMatch[1]) * 3600 + Number(timeMatch[2]) * 60 + Number(timeMatch[3]);
             const totalDur = Math.max(1, endTime - startTime);
             const pct = Math.min(96, Math.max(lastPercent, Math.round((curSec / totalDur) * 95)));
@@ -1473,10 +1593,15 @@ async function handleMessage(msg) {
         activeTempCookie = writeTempCookies(msg.cookiesTxt);
       }
 
+      const isYt = isYouTubeUrl(targetUrl);
+      if (isYt && ytSplitInfo.active) {
+        bypassVpnForYouTube = !useCookies;
+        dohDnsCache.clear();
+      }
+
       let proxyUrl = await getDohProxyIfNeeded(targetUrl, false);
       if (myGen !== downloadGeneration) return 1;
 
-      const isYt = isYouTubeUrl(targetUrl);
       const isYtShort = isYt && /\/shorts\//i.test(targetUrl || '');
       const shouldScaleSingleStream = needsLocalResolutionScale(targetUrl);
 
@@ -1490,7 +1615,7 @@ async function handleMessage(msg) {
           let fullCode = await runYtDlpProcess(fullArgs, true);
           if (fullCode !== 0 && isYt && myGen === downloadGeneration) {
             errorLines = [];
-            fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, 'ios,web_safari,tv,default', customHeaders);
+            fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, 'web_embedded,ios,web_safari,tv,default', customHeaders);
             fullCode = await runYtDlpProcess(fullArgs, true);
           }
           if (myGen === downloadGeneration && fullCode === 0 && isValidOutputFile(tempFullPath)) {
@@ -1523,11 +1648,11 @@ async function handleMessage(msg) {
         if (myGen !== downloadGeneration) return 1;
       }
 
-      // If YouTube stalled or failed on a blackholed ISP GGC server (Read timed out / fragment not found / 403 / 503), immediately retry with HLS-capable clients!
-      if (code !== 0 && isYt && errorLines.some((l) => /timed out|fragment \d+ not found|empty|HTTP Error (403|503)|bytes read,\s*\d+\s*more expected|Requested format is not available/i.test(l)) && myGen === downloadGeneration) {
-        logDebug(`YouTube GGC edge error on ${targetUrl}; retrying with alternate player_client=ios,web_safari,tv,default (HLS enabled)`);
+      // If YouTube stalled or failed on a blackholed ISP GGC server (Read timed out / fragment not found / 403 / 503 / ffmpeg network exit), immediately retry with HLS-capable clients!
+      if (code !== 0 && isYt && errorLines.some((l) => /timed out|fragment \d+ not found|empty|HTTP Error (403|503)|ffmpeg exited with code|bytes read,\s*\d+\s*more expected|Requested format is not available/i.test(l)) && myGen === downloadGeneration) {
+        logDebug(`YouTube GGC edge error on ${targetUrl}; retrying with alternate player_client=web_embedded,ios,web_safari,tv,default (HLS enabled)`);
         errorLines = [];
-        args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl, 'ios,web_safari,tv,default', customHeaders);
+        args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl, 'web_embedded,ios,web_safari,tv,default', customHeaders);
         code = await runYtDlpProcess(args, false);
         if (myGen !== downloadGeneration) return 1;
       }
@@ -1543,15 +1668,16 @@ async function handleMessage(msg) {
 
       // Automatic Two-Step Local Cut Fallback:
       // If cutting a fragment directly over the network failed because FFmpeg's internal HLS/DASH demuxer
-      // rejected segment TLS or manifest seeking (e.g. strm.yandex.ru/*.mpd or YouTube HLS), download full stream via yt-dlp and cut locally!
+      // rejected segment TLS or manifest seeking (e.g. strm.yandex.ru/*.mpd), download full stream via yt-dlp and cut locally!
+      // Note: Do not trigger full-video download fallback on non-Short YouTube videos because long YouTube videos on a stalled GGC node will stall at 2MB.
       const hadFfmpegNetworkError = errorLines.some((l) => /ffmpeg exited with code|fragment \d+ not found|Read timed out/i.test(l));
-      if (code !== 0 && isFragment && endTime > startTime && hadFfmpegNetworkError && myGen === downloadGeneration) {
+      if (code !== 0 && isFragment && endTime > startTime && hadFfmpegNetworkError && (!isYt || isYtShort) && myGen === downloadGeneration) {
         logDebug(`Direct --download-sections failed with network/ffmpeg error on ${targetUrl}; falling back to full download + local ffmpeg cut`);
         errorLines = [];
         const tempFullPath = path.join(getAsciiTempDir(), `vc_full_${Date.now()}.${ext}`);
         activeTempFullVideo = tempFullPath;
         try {
-          const fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, isYt ? 'ios,web_safari,tv,default' : null, customHeaders);
+          const fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, isYt ? 'web_embedded,ios,web_safari,tv,default' : null, customHeaders);
           const fullCode = await runYtDlpProcess(fullArgs, true);
           if (myGen === downloadGeneration && fullCode === 0 && isValidOutputFile(tempFullPath)) {
             const cutCode = await runLocalFfmpegCut(tempFullPath, tempVideoPath, shouldScaleSingleStream);
@@ -1600,9 +1726,9 @@ async function handleMessage(msg) {
 
     const addUrlAttempts = (attemptsArr, url, referer, headers = null) => {
       if (!url || !/^https?:\/\//i.test(url)) return;
-      // On VK and YouTube, try without cookies first so yt-dlp uses its unthrottled default clients (android_vr/tv)
-      // instead of throttled web cookies streams; fall back to cookies only if age-restricted/private!
-      const preferNoCookie = isVkUrl(url) || isYouTubeUrl(url);
+      // On VK and YouTube (when no split-tunnel VPN mismatch is active), try without cookies first so yt-dlp uses its
+      // unthrottled default clients; when split-tunnel VPN is active on YouTube, try with cookies over the VPN route first!
+      const preferNoCookie = isVkUrl(url) || (isYouTubeUrl(url) && !ytSplitInfo.active);
       attemptsArr.push({ url, useCookies: !preferNoCookie && hasCookies, referer, headers });
       if (hasCookies) {
         attemptsArr.push({ url, useCookies: preferNoCookie, referer, headers });
