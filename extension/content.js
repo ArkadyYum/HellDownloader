@@ -138,7 +138,18 @@
     return null;
   }
 
-  // Deep querySelectorAll that traverses into Shadow DOMs inside a specific root
+  function getElementShadowRoot(el) {
+    if (!el) return null;
+    if (el.shadowRoot) return el.shadowRoot;
+    try {
+      if (typeof chrome !== 'undefined' && chrome.dom && typeof chrome.dom.openOrClosedShadowRoot === 'function') {
+        return chrome.dom.openOrClosedShadowRoot(el) || null;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  // Deep querySelectorAll that traverses into open and closed Shadow DOMs inside a specific root
   function queryAllDeep(selector, root = document) {
     const results = [];
     if (!root) return results;
@@ -147,8 +158,9 @@
     } catch (_) {}
     const allEls = root.querySelectorAll ? root.querySelectorAll('*') : [];
     for (const el of allEls) {
-      if (el.shadowRoot) {
-        results.push(...queryAllDeep(selector, el.shadowRoot));
+      const sr = getElementShadowRoot(el);
+      if (sr) {
+        results.push(...queryAllDeep(selector, sr));
       }
     }
     return results;
@@ -679,7 +691,7 @@
         for (const hitEl of hitList) {
           if (hitEl.id === 'vc-clipper-panel' || hitEl.id === 'vc-native-markers' || hitEl.id === 'vc-drag-shield' || hitEl.id === 'vc-video-highlight') continue;
           if (hitEl.closest?.('#vc-clipper-panel, #vc-native-markers, #vc-drag-shield, #vc-video-highlight')) continue;
-          if (hitEl === v || hitEl.shadowRoot?.contains?.(v)) {
+          if (hitEl === v || getElementShadowRoot(hitEl)?.contains?.(v)) {
             isTopVisible = true;
             break;
           }

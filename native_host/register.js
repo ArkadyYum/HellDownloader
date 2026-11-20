@@ -68,6 +68,10 @@ let manifest = {
   content_scripts: [
     {
       matches: ['<all_urls>'],
+      exclude_matches: [
+        '*://challenges.cloudflare.com/*',
+        '*://*/cdn-cgi/challenge-platform/*'
+      ],
       js: ['unclose_shadow.js'],
       run_at: 'document_start',
       world: 'MAIN',
@@ -75,6 +79,10 @@ let manifest = {
     },
     {
       matches: ['<all_urls>'],
+      exclude_matches: [
+        '*://challenges.cloudflare.com/*',
+        '*://*/cdn-cgi/challenge-platform/*'
+      ],
       js: ['content.js'],
       css: ['content.css'],
       run_at: 'document_idle',

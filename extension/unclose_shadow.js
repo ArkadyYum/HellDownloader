@@ -1,12 +1,14 @@
 (() => {
-  try {
-    const origAttachShadow = Element.prototype.attachShadow;
-    if (origAttachShadow) {
-      Element.prototype.attachShadow = function (init) {
-        return origAttachShadow.call(this, { ...init, mode: 'open' });
-      };
-    }
-  } catch (_) {}
+  // Never run inside Cloudflare Turnstile / CAPTCHA challenge frames;
+  // closed Shadow DOMs are inspected safely from the isolated content script via chrome.dom.openOrClosedShadowRoot()
+  // without monkey-patching Element.prototype.attachShadow in the MAIN world (which triggers Cloudflare Turnstile bot checks).
+  if (
+    typeof window !== 'undefined' &&
+    (/(^|\.)(challenges\.cloudflare\.com|hcaptcha\.com|recaptcha\.net|google\.com)$/i.test(window.location.hostname) &&
+      /\/(cdn-cgi\/challenge-platform|recaptcha)\//i.test(window.location.pathname))
+  ) {
+    return;
+  }
 
   // On YouTube, bridge available video qualities & metadata from #movie_player (MAIN world) to DOM dataset for instant 0ms detection
   if (typeof window !== 'undefined' && /youtube\.com$/i.test(window.location.hostname)) {
