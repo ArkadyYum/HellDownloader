@@ -32,7 +32,7 @@
   <p>
     <a href="https://github.com/ArkadyYum/HellDownloader/releases/latest/download/HellDownloader_Setup.zip"><b>Download Installer</b></a> &nbsp;·&nbsp;
     <a href="#-1-click-download--installation-takes-1-minute"><b>Installation Guide</b></a> &nbsp;·&nbsp;
-    <a href="#-whats-new-in-v120"><b>What's New (v1.2.0)</b></a> &nbsp;·&nbsp;
+    <a href="#-whats-new-in-v121"><b>What's New (v1.2.1)</b></a> &nbsp;·&nbsp;
     <a href="https://github.com/ArkadyYum/HellDownloader/discussions/1"><b>💬 Discussions & Feedback</b></a> &nbsp;·&nbsp;
     <a href="https://github.com/ArkadyYum/HellDownloader/issues"><b>Report Bug</b></a> &nbsp;·&nbsp;
     <a href="https://www.donationalerts.com/r/yumarkady"><b>Donate</b></a>
@@ -66,10 +66,12 @@
 
 ---
 
-## 🆕 What's New in v1.2.0
+## 🆕 What's New in v1.2.1
 
+* **Reliable FFmpeg Auto-Setup via GitHub:** Switched FFmpeg installer and added automatic on-demand recovery in `host.js` using official `yt-dlp/FFmpeg-Builds` on GitHub Releases (fixing `ffmpeg.exe not found` when `gyan.dev` is blocked by ISP filters).
+* **Full Multi-Quality HLS Discovery & 2× Faster Segment Downloads:** Automatically resolves parent master manifests (`index.m3u8`) from single-resolution sub-playlists (`index_1080p.m3u8` / `index_2160p.m3u8`) on sites like Higgsfield AI and bumps concurrent HLS fragments to 8.
+* **Custom Stream Auth Header Forwarding & Fullscreen Polish:** Captures custom player request headers (`Origin`, `Authorization`, `Authorizations`, `X-*`) for protected HLS/DASH streams, and hides/resets the green active-video highlight frame cleanly when entering or exiting fullscreen.
 * **Minimalist Compact HUD & `Advanced View`:** Clean 4-column quality grid (`144p`–`4K` + `MP3`) and one-click mode tabs by default; expandable `Advanced View` houses frame-step controls (`1f` / `1s`), duration lock (`🔒`), manual format refresh, and settings (`⚙️` shortcut & `Auto-update`).
-* **Active Video Highlight Border:** Soft green highlight frame around the active `<video>` in `Full Video` mode so you always see which video is targeted on multi-video feeds.
 * **TikTok, VK Clips & YouTube Shorts Upgrades:** Accurate timeline slider alignment on YouTube Shorts, TikTok, and letterboxed/pillarboxed players; full feed & multi-quality detection on TikTok (with direct CDN fallback); fixed VK Clips downloading the vertical clip itself rather than the linked full-length source video.
 * **Stronger Network Resilience:** Built-in DNS-over-HTTPS (DoH) local bridge and automatic HLS/multi-client fallback when ISP caches or DNS restrict media streams, plus cleaner diagnostic bug reports.
 

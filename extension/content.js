@@ -425,9 +425,10 @@
       }
     }
 
-    // 2. Intersect with overflow-clipping ancestors
-    let curr = videoEl.parentElement;
-    for (let i = 0; i < 12 && curr && curr !== document.body && curr !== document.documentElement; i++) {
+    // 2. Intersect with overflow-clipping ancestors (never walk above the active fullscreen element, since #top-layer is not clipped by ancestor overflow!)
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    let curr = (fsEl && videoEl === fsEl) ? null : videoEl.parentElement;
+    for (let i = 0; i < 12 && curr && curr !== fsEl && curr !== document.body && curr !== document.documentElement; i++) {
       try {
         const st = window.getComputedStyle(curr);
         if (/(hidden|clip|auto|scroll)/.test(`${st.overflow} ${st.overflowX} ${st.overflowY}`)) {
@@ -468,7 +469,6 @@
     }
 
     // 3. Visual occlusion check: if a page block (like "Сезоны" on ivi.tv) overlaps the bottom portion of a wide landscape hero <video>
-    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
     const isDedicatedVideoFeedSite = /(youtube\.com|tiktok\.com|vk\.com|vk\.ru|vkvideo\.ru|rutube\.ru|ok\.ru|vimeo\.com|twitch\.tv|reddit\.com|instagram\.com|x\.com|twitter\.com)$/i.test(
       window.location.hostname
     );
@@ -890,12 +890,20 @@
           if (/\/(audio[-_][^/]*\.m3u8|playlist_a\.m3u8)(\?|$)/i.test(lower)) continue;
           if (/[?&]st=audio\b/i.test(lower)) continue;
           seen.add(u);
+          const recencyBonus = Math.max(0, 18 - scored.length * 2);
+          if (/\/(index|master|playlist)[-_]\d{3,4}p?\.m3u8(\?|$)/i.test(u)) {
+            const masterUrl = u.replace(/\/(index|master|playlist)[-_]\d{3,4}p?\.m3u8(\?|$)/i, '/$1.m3u8$2');
+            if (masterUrl !== u && !seen.has(masterUrl)) {
+              seen.add(masterUrl);
+              scored.push({ u: masterUrl, priority: 105 + recencyBonus });
+            }
+          }
           let priority = 50;
-          if (lower.includes(':hls:manifest.m3u8') || lower.includes('master.m3u8') || /\/pl\.m3u8(\?|$)/i.test(lower) || lower.includes('.mpd') || (lower.includes('okcdn.ru/') && /[?&]ct=(6|8)\b/i.test(lower))) priority = 100;
-          else if (/\/playlists\/media\/video[-_]/i.test(lower) || /\/stream_(low|sd|max|hd)\.m3u8(\?|$)/i.test(lower)) priority = 30;
+          if (lower.includes(':hls:manifest.m3u8') || lower.includes('master.m3u8') || /\/index\.m3u8(\?|$)/i.test(lower) || /\/pl\.m3u8(\?|$)/i.test(lower) || lower.includes('.mpd') || (lower.includes('okcdn.ru/') && /[?&]ct=(6|8)\b/i.test(lower))) priority = 100;
+          else if (/\/(index|master|playlist)[-_]\d{3,4}p?\.m3u8(\?|$)/i.test(lower) || /\/playlists\/media\/video[-_]/i.test(lower) || /\/stream_(low|sd|max|hd)\.m3u8(\?|$)/i.test(lower)) priority = 35;
           else if (lower.includes('.m3u8')) priority = 90;
           else if (lower.includes('/video/tos/') || lower.includes('mime_type=video_mp4')) priority = 85;
-          scored.push({ u, priority });
+          scored.push({ u, priority: priority + recencyBonus });
         }
       }
     } catch (_) {}
@@ -3334,11 +3342,12 @@
       ensureMountedInOverlayRoot();
     }
 
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
     const v = (fastScroll && activeVideo && activeVideo.isConnected) ? activeVideo : findLocalVideo();
     if (IS_TOP_WINDOW && shouldUseRemoteIframe(v)) {
       activeVideo = null;
       if (markersEl) markersEl.classList.add('vc-hidden');
-      if (mode === 'full' && videoHighlightEl && remoteIframeState?.topRect) {
+      if (mode === 'full' && videoHighlightEl && !fsEl && remoteIframeState?.topRect) {
         const tr = findMatchingTopIframeRect(remoteIframeState.frameUrl) || remoteIframeState.topRect;
         if (tr && tr.width >= 130 && tr.height >= 100 && tr.bottom >= 40 && tr.top <= window.innerHeight - 40) {
           videoHighlightEl.classList.remove('vc-hidden');
@@ -3355,7 +3364,7 @@
 
     if (mode === 'full') {
       if (markersEl) markersEl.classList.add('vc-hidden');
-      if (v && videoHighlightEl) {
+      if (v && videoHighlightEl && !fsEl) {
         const pRoot = getPlayerContainer(v);
         const vRect = getVisibleVideoRect(v, pRoot, fastScroll);
         if (vRect.width >= 130 && vRect.height >= 70 && vRect.bottom >= 40 && vRect.top <= window.innerHeight - 40) {
@@ -4075,9 +4084,17 @@
         panelEl?.classList.add('vc-hidden');
       }
     }
+    if (fsEl && videoHighlightEl) {
+      videoHighlightEl.classList.add('vc-hidden');
+    }
     if (isOpen || remoteOpen) {
       ensureMountedInOverlayRoot();
       mountMarkersOnProgressBar();
+      setTimeout(() => {
+        if (isContextValid() && (isOpen || remoteOpen)) {
+          mountMarkersOnProgressBar();
+        }
+      }, 120);
     }
   };
   document.addEventListener('fullscreenchange', handleFullscreenChange, true);

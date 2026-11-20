@@ -6,6 +6,8 @@ const activePorts = new Map();
 const pendingChromeDownloads = new Map();
 // Captured media stream URLs (.m3u8, .mpd, .mp4, embed players) per tabId from webRequest
 const tabStreams = new Map();
+// Captured custom auth/origin headers per media stream hostname (e.g. Alloha Bearer / Authorizations / Origin)
+const hostCustomHeaders = new Map();
 
 function normalizeStreamUrl(urlStr) {
   if (!urlStr || !/^https?:\/\//i.test(urlStr)) return '';
@@ -84,7 +86,8 @@ function scoreStreamUrl(urlStr) {
   if (/(vk\.com|vkvideo\.ru)\/video_ext\.php/i.test(lower) || /(vk\.com|vkvideo\.ru)\/video-?\d+_\d+/i.test(lower)) return 110;
   if (/\.mp4:hls:manifest\.m3u8/i.test(lower)) return 108;
   if (lower.includes('okcdn.ru/') && /[?&]ct=(6|8)\b/i.test(lower)) return 106;
-  if (lower.includes('master.m3u8') || /\/pl\.m3u8(\?|$)/i.test(lower) || lower.includes('manifest.mpd') || /\.mpd(\?|$)/.test(lower)) return 105;
+  if (/\/(index|master|playlist)[-_]\d{3,4}p?\.m3u8(\?|$)/i.test(lower)) return 35; // Single-quality HLS sub-playlist (prefer parent index.m3u8 / master.m3u8)
+  if (lower.includes('master.m3u8') || /\/index\.m3u8(\?|$)/i.test(lower) || /\/pl\.m3u8(\?|$)/i.test(lower) || lower.includes('manifest.mpd') || /\.mpd(\?|$)/.test(lower)) return 105;
   if (/\/playlists\/media\/video[-_]/i.test(lower) || /\/stream_(low|sd|max|hd)\.m3u8(\?|$)/i.test(lower)) return 30; // Single-quality HLS sub-playlist (prefer master.m3u8 or page URL)
   if (lower.includes('manifest.m3u8') || /\.m3u8(\?|$)/.test(lower)) return 100;
   if (/rutube\.ru\/play\/embed\//i.test(lower)) return 95;
@@ -98,6 +101,14 @@ function expandEmbedUrlVariants(urlStr) {
   const results = [];
   if (!urlStr || !/^https?:\/\//i.test(urlStr)) return results;
   const norm = normalizeStreamUrl(urlStr);
+  // If a player requests a single-resolution HLS sub-playlist like .../index_1080p.m3u8 or .../index_2160p.m3u8 (e.g. higgsfield.ai),
+  // also include the parent master manifest .../index.m3u8 first so all qualities (480p..4K) are available and fast!
+  if (/\/(index|master|playlist)[-_]\d{3,4}p?\.m3u8(\?|$)/i.test(norm)) {
+    const masterVariant = norm.replace(/\/(index|master|playlist)[-_]\d{3,4}p?\.m3u8(\?|$)/i, '/$1.m3u8$2');
+    if (masterVariant !== norm) {
+      results.push(masterVariant);
+    }
+  }
   results.push(norm);
   try {
     const u = new URL(norm);
@@ -147,6 +158,56 @@ chrome.webRequest.onBeforeRequest.addListener(
   },
   { urls: ['<all_urls>'] }
 );
+
+// Capture custom request headers (Origin, Authorization, Authorizations, X-*) sent by HLS/DASH players (e.g. Alloha xhrSetup)
+try {
+  const onSendHeaders = (details) => {
+    if (!details.requestHeaders || !details.url) return;
+    const lowerUrl = details.url.toLowerCase();
+    if (!isMediaStreamUrl(details.url) && !/\.(m3u8|mpd|ts|m4s)(\?|$)/i.test(lowerUrl)) return;
+    let host = '';
+    try {
+      host = new URL(details.url).hostname.toLowerCase();
+    } catch (_) {
+      return;
+    }
+    if (!host) return;
+    let saved = null;
+    for (const h of details.requestHeaders) {
+      if (!h || !h.name || !h.value) continue;
+      const nameLower = h.name.toLowerCase();
+      if (
+        nameLower === 'origin' ||
+        nameLower === 'authorization' ||
+        nameLower === 'authorizations' ||
+        /^x-(stream|auth|token|playback|session|key|media|player|client)/i.test(nameLower)
+      ) {
+        if (!saved) saved = hostCustomHeaders.get(host) || {};
+        saved[h.name] = h.value;
+      }
+    }
+    if (saved) {
+      hostCustomHeaders.set(host, saved);
+      if (hostCustomHeaders.size > 60) {
+        const firstKey = hostCustomHeaders.keys().next().value;
+        if (firstKey) hostCustomHeaders.delete(firstKey);
+      }
+    }
+  };
+  try {
+    chrome.webRequest.onBeforeSendHeaders.addListener(
+      onSendHeaders,
+      { urls: ['<all_urls>'] },
+      ['requestHeaders', 'extraHeaders']
+    );
+  } catch (_) {
+    chrome.webRequest.onBeforeSendHeaders.addListener(
+      onSendHeaders,
+      { urls: ['<all_urls>'] },
+      ['requestHeaders']
+    );
+  }
+} catch (_) {}
 
 chrome.tabs.onRemoved.addListener((tabId) => {
   tabStreams.delete(tabId);
@@ -338,18 +399,29 @@ function collectTabStreams(tabId, extraStreams = [], pageUrl = '', activeFrameId
     for (const url of expandEmbedUrlVariants(rawUrl)) {
       if (!url || !isMediaStreamUrl(url) || seen.has(url)) continue;
       seen.add(url);
+      let headers = null;
+      try {
+        const h = new URL(url).hostname.toLowerCase();
+        if (hostCustomHeaders.has(h)) {
+          headers = hostCustomHeaders.get(h);
+        }
+      } catch (_) {}
       combined.push({
         url,
         referer: referer || pageUrl || '',
+        headers,
         score: scoreStreamUrl(url) + bonus
       });
     }
   };
 
-  // Streams directly attached to the active <video> element in the DOM get top priority (+35 bonus)
-  for (const s of extraStreams || []) {
-    if (typeof s === 'string') addCandidate(s, pageUrl, 35);
-    else if (s?.url) addCandidate(s.url, s.referer || pageUrl, 35);
+  // Streams directly attached to the active <video> element in the DOM get top priority (+35 bonus + positional recency)
+  const extraArr = extraStreams || [];
+  for (let idx = 0; idx < extraArr.length; idx++) {
+    const s = extraArr[idx];
+    const posBonus = 35 + Math.max(0, 14 - idx * 2);
+    if (typeof s === 'string') addCandidate(s, pageUrl, posBonus);
+    else if (s?.url) addCandidate(s.url, s.referer || pageUrl, posBonus);
   }
 
   // Only fall back to tab-wide webRequest streams if extraStreams did not provide an explicit direct stream or if on an iframe player site

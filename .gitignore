@@ -10,6 +10,8 @@ native_host/host_launcher.bat
 native_host/bin/*.exe
 DO NOT SHARE.txt
 PROJECT_NOTES.md
+TODO.md
+read_reports.js
 .env*
 .DS_Store
 Thumbs.db
@@ -17,4 +19,5 @@ docs/*.mp4
 docs/*.mp3
 docs/promo-project/
 docs/habr-before-after.png
+docs/habr_*.md
 docs/photo_*.jpg

@@ -33,7 +33,7 @@ const manifestPath = path.join(extDir, 'manifest.json');
 let manifest = {
   manifest_version: 3,
   name: 'HellDownloader',
-  version: '1.2.0',
+  version: '1.2.1',
   description: 'HellDownloader — universal HTML5 video & frame-accurate fragment clipper up to 4K.',
   key: keyData.keyBase64,
   icons: {

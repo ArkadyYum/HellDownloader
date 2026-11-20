@@ -222,6 +222,59 @@ function findFfmpegDir() {
   return null;
 }
 
+let ffmpegDownloadPromise = null;
+async function ensureFfmpegDir(requestId = null) {
+  const existing = findFfmpegDir();
+  if (existing) return existing;
+  if (ffmpegDownloadPromise) return ffmpegDownloadPromise;
+
+  ffmpegDownloadPromise = new Promise((resolve) => {
+    try {
+      const targetBinDir = path.join(publicSafeDir, 'bin');
+      fs.mkdirSync(targetBinDir, { recursive: true });
+      if (requestId) {
+        sendMessage({
+          requestId,
+          type: 'progress',
+          percent: 3,
+          stage: 'Downloading FFmpeg from GitHub (first-time setup)...'
+        });
+      }
+      logDebug('ffmpeg.exe missing; auto-downloading portable FFmpeg from GitHub yt-dlp/FFmpeg-Builds...');
+      const psCmd = [
+        '[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12;',
+        "$zip = Join-Path $env:TEMP 'hd_ffmpeg_auto.zip';",
+        "$ext = Join-Path $env:TEMP 'hd_ffmpeg_auto_ext';",
+        "$urls = @('https://github.com/yt-dlp/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip', 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip');",
+        'foreach ($u in $urls) { try { if (Test-Path $zip) { Remove-Item $zip -Force }; Invoke-WebRequest -Uri $u -OutFile $zip -UseBasicParsing; if (Test-Path $zip) { break } } catch {} };',
+        'if (Test-Path $zip) {',
+        '  if (Test-Path $ext) { Remove-Item $ext -Recurse -Force };',
+        '  Expand-Archive -Path $zip -DestinationPath $ext -Force;',
+        "  $exe = Get-ChildItem -Path $ext -Filter 'ffmpeg.exe' -Recurse | Select-Object -First 1;",
+        `  if ($exe) { Copy-Item (Join-Path $exe.DirectoryName '*') '${targetBinDir.replace(/'/g, "''")}' -Force };`,
+        '  Remove-Item $zip -Force -ErrorAction SilentlyContinue;',
+        '  Remove-Item $ext -Recurse -Force -ErrorAction SilentlyContinue;',
+        '}'
+      ].join(' ');
+      const proc = spawn('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psCmd], {
+        windowsHide: true
+      });
+      proc.on('close', () => {
+        ffmpegDownloadPromise = null;
+        resolve(findFfmpegDir());
+      });
+      proc.on('error', () => {
+        ffmpegDownloadPromise = null;
+        resolve(findFfmpegDir());
+      });
+    } catch (_) {
+      ffmpegDownloadPromise = null;
+      resolve(findFfmpegDir());
+    }
+  });
+  return ffmpegDownloadPromise;
+}
+
 function findFileRecursive(dir, targetName, maxDepth) {
   if (maxDepth < 0) return null;
   try {
@@ -624,7 +677,7 @@ function isDnsFailureText(text) {
   return /(getaddrinfo failed|Failed to resolve|Errno 11001|Name or service not known|Temporary failure in name resolution)/i.test(text || '');
 }
 
-async function runDumpJsonOnce(ytdlp, ffmpegDir, targetUrl, cookieFile, userAgent, referer, forceProxy = false) {
+async function runDumpJsonOnce(ytdlp, ffmpegDir, targetUrl, cookieFile, userAgent, referer, forceProxy = false, customHeaders = null) {
   const proxyUrl = await getDohProxyIfNeeded(targetUrl, forceProxy);
   return new Promise((resolve) => {
     const args = [
@@ -639,6 +692,11 @@ async function runDumpJsonOnce(ytdlp, ffmpegDir, targetUrl, cookieFile, userAgen
     if (cookieFile && fs.existsSync(cookieFile)) args.push('--cookies', cookieFile);
     if (userAgent) args.push('--user-agent', userAgent);
     if (referer && /^https?:\/\//i.test(referer)) args.push('--referer', referer);
+    if (customHeaders && typeof customHeaders === 'object') {
+      for (const [hName, hVal] of Object.entries(customHeaders)) {
+        if (hName && hVal) args.push('--add-header', `${hName}:${hVal}`);
+      }
+    }
     args.push(normalizeTargetUrl(targetUrl));
 
     const proc = spawn(ytdlp, args, { windowsHide: true });
@@ -655,7 +713,7 @@ async function runDumpJsonOnce(ytdlp, ffmpegDir, targetUrl, cookieFile, userAgen
   });
 }
 
-async function runDumpJsonWithCookieFallback(ytdlp, ffmpegDir, targetUrl, cookiesTxt, userAgent, referer) {
+async function runDumpJsonWithCookieFallback(ytdlp, ffmpegDir, targetUrl, cookiesTxt, userAgent, referer, customHeaders = null) {
   const preferNoCookieFirst = isVkUrl(targetUrl) || isYouTubeUrl(targetUrl);
   const firstUseCookie = !preferNoCookieFirst && Boolean(cookiesTxt);
   const secondUseCookie = preferNoCookieFirst && Boolean(cookiesTxt);
@@ -663,11 +721,11 @@ async function runDumpJsonWithCookieFallback(ytdlp, ffmpegDir, targetUrl, cookie
   const runAttempt = async (useCookie, forceProxy = false) => {
     const tmpCookie = useCookie ? writeTempCookies(cookiesTxt) : null;
     try {
-      let r = await runDumpJsonOnce(ytdlp, ffmpegDir, targetUrl, tmpCookie, userAgent, referer, forceProxy);
+      let r = await runDumpJsonOnce(ytdlp, ffmpegDir, targetUrl, tmpCookie, userAgent, referer, forceProxy, customHeaders);
       if (r.code !== 0 && !forceProxy && isDnsFailureText(r.stderr)) {
         logDebug(`DNS failure detected in get_formats (${targetUrl}); retrying via DoH local bridge`);
         forceDohProxyGlobal = true;
-        r = await runDumpJsonOnce(ytdlp, ffmpegDir, targetUrl, tmpCookie, userAgent, referer, true);
+        r = await runDumpJsonOnce(ytdlp, ffmpegDir, targetUrl, tmpCookie, userAgent, referer, true, customHeaders);
       }
       return r;
     } finally {
@@ -904,7 +962,8 @@ async function handleMessage(msg) {
             cand.url,
             msg.cookiesTxt,
             msg.userAgent,
-            cand.referer || msg.url
+            cand.referer || msg.url,
+            cand.headers || null
           );
           if (res.code === 0 && res.stdout.trim()) break;
         }
@@ -1031,13 +1090,13 @@ async function handleMessage(msg) {
     const myGen = ++downloadGeneration;
 
     const ytdlp = findYtDlp();
-    const ffmpegDir = findFfmpegDir();
     if (!fs.existsSync(ytdlp)) {
       sendMessage({ requestId, type: 'error', error: 'yt-dlp.exe not found in native_host/bin' });
       return;
     }
+    const ffmpegDir = await ensureFfmpegDir(requestId);
     if (!ffmpegDir) {
-      sendMessage({ requestId, type: 'error', error: 'ffmpeg.exe not found on this system' });
+      sendMessage({ requestId, type: 'error', error: 'ffmpeg.exe not found on this system (please run install.bat)' });
       return;
     }
 
@@ -1062,7 +1121,7 @@ async function handleMessage(msg) {
 
     const candidates = Array.isArray(msg.streamCandidates) ? msg.streamCandidates : [];
 
-    const buildYtDlpArgs = (targetUrl, useCookies, referer, forceFullDownload = false, customOutPath = tempVideoPath, proxyUrl = null, ytClientOverride = null) => {
+    const buildYtDlpArgs = (targetUrl, useCookies, referer, forceFullDownload = false, customOutPath = tempVideoPath, proxyUrl = null, ytClientOverride = null, customHeaders = null) => {
       const isArchiveOrg = /archive\.org\//i.test(targetUrl || '');
       const isYt = isYouTubeUrl(targetUrl);
       const isLiveStream = Boolean(msg.isLive);
@@ -1080,7 +1139,7 @@ async function handleMessage(msg) {
         '--socket-timeout', isYt ? '4' : '8',
         '--retries', isYt ? '2' : '3',
         '--fragment-retries', isYt ? '2' : '3',
-        '--concurrent-fragments', isArchiveOrg ? '16' : (isYt ? '3' : '4'),
+        '--concurrent-fragments', isArchiveOrg ? '16' : (isYt ? '3' : '8'),
         '--js-runtimes', `node:${process.execPath}`,
         '--ffmpeg-location', ffmpegDir,
         '--downloader-args', 'ffmpeg_i:-tls_verify 0 -multiple_requests 1 -reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -rw_timeout 15000000'
@@ -1102,6 +1161,11 @@ async function handleMessage(msg) {
       }
       if (referer && /^https?:\/\//i.test(referer)) {
         args.push('--referer', referer);
+      }
+      if (customHeaders && typeof customHeaders === 'object') {
+        for (const [hName, hVal] of Object.entries(customHeaders)) {
+          if (hName && hVal) args.push('--add-header', `${hName}:${hVal}`);
+        }
       }
 
       if (audioOnly) {
@@ -1398,7 +1462,7 @@ async function handleMessage(msg) {
       });
     });
 
-    const runDownloadAttempt = async (targetUrl, useCookies, referer) => {
+    const runDownloadAttempt = async (targetUrl, useCookies, referer, customHeaders = null) => {
       if (myGen !== downloadGeneration) return 1;
       errorLines = [];
       if (activeTempCookie && fs.existsSync(activeTempCookie)) {
@@ -1422,11 +1486,11 @@ async function handleMessage(msg) {
         const tempFullPath = path.join(getAsciiTempDir(), `vc_full_${Date.now()}.${ext}`);
         activeTempFullVideo = tempFullPath;
         try {
-          let fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, null);
+          let fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, null, customHeaders);
           let fullCode = await runYtDlpProcess(fullArgs, true);
           if (fullCode !== 0 && isYt && myGen === downloadGeneration) {
             errorLines = [];
-            fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, 'ios,web_safari,tv,default');
+            fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, 'ios,web_safari,tv,default', customHeaders);
             fullCode = await runYtDlpProcess(fullArgs, true);
           }
           if (myGen === downloadGeneration && fullCode === 0 && isValidOutputFile(tempFullPath)) {
@@ -1443,7 +1507,7 @@ async function handleMessage(msg) {
         }
       }
 
-      let args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl, null);
+      let args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl, null, customHeaders);
       let code = await runYtDlpProcess(args, false);
       if (myGen !== downloadGeneration) return 1;
 
@@ -1454,7 +1518,7 @@ async function handleMessage(msg) {
         errorLines = [];
         proxyUrl = await ensureDohProxyServer();
         if (myGen !== downloadGeneration) return 1;
-        args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl, null);
+        args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl, null, customHeaders);
         code = await runYtDlpProcess(args, false);
         if (myGen !== downloadGeneration) return 1;
       }
@@ -1463,7 +1527,7 @@ async function handleMessage(msg) {
       if (code !== 0 && isYt && errorLines.some((l) => /timed out|fragment \d+ not found|empty|HTTP Error (403|503)|bytes read,\s*\d+\s*more expected|Requested format is not available/i.test(l)) && myGen === downloadGeneration) {
         logDebug(`YouTube GGC edge error on ${targetUrl}; retrying with alternate player_client=ios,web_safari,tv,default (HLS enabled)`);
         errorLines = [];
-        args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl, 'ios,web_safari,tv,default');
+        args = buildYtDlpArgs(targetUrl, useCookies, referer, false, tempVideoPath, proxyUrl, 'ios,web_safari,tv,default', customHeaders);
         code = await runYtDlpProcess(args, false);
         if (myGen !== downloadGeneration) return 1;
       }
@@ -1487,7 +1551,7 @@ async function handleMessage(msg) {
         const tempFullPath = path.join(getAsciiTempDir(), `vc_full_${Date.now()}.${ext}`);
         activeTempFullVideo = tempFullPath;
         try {
-          const fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, isYt ? 'ios,web_safari,tv,default' : null);
+          const fullArgs = buildYtDlpArgs(targetUrl, useCookies, referer, true, tempFullPath, proxyUrl, isYt ? 'ios,web_safari,tv,default' : null, customHeaders);
           const fullCode = await runYtDlpProcess(fullArgs, true);
           if (myGen === downloadGeneration && fullCode === 0 && isValidOutputFile(tempFullPath)) {
             const cutCode = await runLocalFfmpegCut(tempFullPath, tempVideoPath, shouldScaleSingleStream);
@@ -1534,14 +1598,14 @@ async function handleMessage(msg) {
       return code;
     };
 
-    const addUrlAttempts = (attemptsArr, url, referer) => {
+    const addUrlAttempts = (attemptsArr, url, referer, headers = null) => {
       if (!url || !/^https?:\/\//i.test(url)) return;
       // On VK and YouTube, try without cookies first so yt-dlp uses its unthrottled default clients (android_vr/tv)
       // instead of throttled web cookies streams; fall back to cookies only if age-restricted/private!
       const preferNoCookie = isVkUrl(url) || isYouTubeUrl(url);
-      attemptsArr.push({ url, useCookies: !preferNoCookie && hasCookies, referer });
+      attemptsArr.push({ url, useCookies: !preferNoCookie && hasCookies, referer, headers });
       if (hasCookies) {
-        attemptsArr.push({ url, useCookies: preferNoCookie, referer });
+        attemptsArr.push({ url, useCookies: preferNoCookie, referer, headers });
       }
     };
 
@@ -1589,18 +1653,19 @@ async function handleMessage(msg) {
       if (isAdNetworkUrl(cand.url)) continue;
       if (!audioOnly && isAudioOnlyStreamUrl(cand.url)) continue;
       const ref = cand.referer || msg.url;
+      const hdrs = cand.headers || null;
       if (isKodikStreamUrl(cand.url) && !audioOnly && height <= 1080) {
         const resUrl = buildKodikResolutionUrl(cand.url, height);
         if (resUrl !== cand.url) {
-          addUrlAttempts(attempts, resUrl, ref);
+          addUrlAttempts(attempts, resUrl, ref, hdrs);
         }
       } else if (isPikabuStreamUrl(cand.url) && !audioOnly) {
         const pkbUrl = buildPikabuResolutionUrl(cand.url, height);
         if (pkbUrl !== cand.url) {
-          addUrlAttempts(attempts, pkbUrl, ref);
+          addUrlAttempts(attempts, pkbUrl, ref, hdrs);
         }
       }
-      addUrlAttempts(attempts, cand.url, ref);
+      addUrlAttempts(attempts, cand.url, ref, hdrs);
     }
 
     if (hasKodikCandidate && msg.videoSrc && /^https?:\/\//i.test(msg.videoSrc) && !isAdNetworkUrl(msg.videoSrc)) {
@@ -1620,7 +1685,7 @@ async function handleMessage(msg) {
       if (triedUrls.has(key)) continue;
       triedUrls.add(key);
 
-      exitCode = await runDownloadAttempt(att.url, att.useCookies, att.referer);
+      exitCode = await runDownloadAttempt(att.url, att.useCookies, att.referer, att.headers || null);
       if (myGen !== downloadGeneration) return;
       if (exitCode === 0 && isValidOutputFile(tempVideoPath)) {
         break;
@@ -1660,6 +1725,8 @@ async function handleMessage(msg) {
       let errText = finalErrors.join('\n') || 'Could not download video stream (make sure video playback has started)';
       if (/getaddrinfo failed|Failed to resolve/i.test(errText)) {
         errText = 'Системный DNS провайдера блокирует этот домен для внешних программ (в Chrome работает только за счёт встроенного Secure DNS + Zapret). Включите VPN или пропишите DNS 8.8.8.8 / 1.1.1.1 в настройках сетевого адаптера Windows.';
+      } else if (/HTTP Error 403:\s*Forbidden/i.test(errText) && /(stravers\.live|userplay\.live|allplay|token_movie=)/i.test(`${msg.url || ''} ${errText}`)) {
+        errText = 'Этот встроенный кино-плеер защищает видеопоток одноразовыми ключами сессии (403 Forbidden). Переключитесь на другой плеер на странице (например, «Плеер 1» / Kodik / CVH).';
       }
       sendMessage({
         requestId,
